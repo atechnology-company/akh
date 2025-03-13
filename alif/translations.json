@@ -1,0 +1,45 @@
+{
+    "assalamualaikum": {
+      "en": "Assalamualaikum!",
+      "ur": "السلام علیکم!",
+      "ms": "Assalamualaikum!",
+      "id": "Assalamualaikum!",
+      "ru": "Ассалам алейкум!",
+      "zh": "Assalamualaikum！",
+      "ar": "السلام عليكم!",
+      "fa": "سلام علیکم!",
+      "hi": "अस्सलामु अलैकुम!",
+      "bn": "আসসালামু আলাইকুম!",
+      "fr": "Assalamou alaykoum!",
+      "de": "Assalamu alaikum!",
+      "es": "¡As-salamu alaykum!",
+      "ps": "السلام عليکم!",
+      "tr": "Selamün aleyküm!",
+      "ku": "سلێمانی علیكوم!",
+      "ug": "السلام علیکم!",
+      "sw": "Assalam alaikum!",
+      "ce": "Ассалам алейкум!"
+    },
+    "learn_today": {
+      "en": "What do you want to learn today?",
+      "ur": "آج آپ کیا سیکھنا چاہتے ہیں؟",
+      "ms": "Apa yang anda mahu pelajari hari ini?",
+      "id": "Apa yang ingin kamu pelajari hari ini?",
+      "ru": "Чему ты хочешь научиться сегодня?",
+      "zh": "你今天想学什么？",
+      "ar": "ماذا تريد أن تتعلم اليوم؟",
+      "fa": "امروز می‌خواهید چه چیزی یاد بگیرید؟",
+      "hi": "आज आप क्या सीखना चाहते हैं?",
+      "bn": "আজ আপনি কী শিখতে চান?",
+      "fr": "Que veux-tu apprendre aujourd'hui ?",
+      "de": "Was möchtest du heute lernen?",
+      "es": "¿Qué quieres aprender hoy?",
+      "ps": "نن تاسو څه زده کول غواړئ؟",
+      "tr": "Bugün ne öğrenmek istiyorsun?",
+      "ku": "ئەمڕۆ دەتەوێ چی فێربیت؟",
+      "ug": "بۈگۈن نېمە ئۆگىنىشنى خالىيسىز؟",
+      "sw": "Unataka kujifunza nini leo?",
+      "ce": "хӀун Ӏамо лаьа шуна тахана?"
+    }
+  }
+  

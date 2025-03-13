@@ -1,0 +1,53 @@
+<!-- بسم الله الرحمن الرحيم-->
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>akh - fatawa</title>
+    <link rel="stylesheet" href="styles.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Onest:wght@100..900&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded&display=swap" rel="stylesheet">
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/1.12.2/jquery.min.js"></script>
+</head>
+<body>
+
+    <div id="loading-overlay">
+        <div class="loader-content">
+            <div class="loader"></div>
+            <p>initializing...</p>
+        </div>
+    </div>
+
+    <div id="input-page" class="page active">
+        <div class="container">
+            <h1 id="greeting">Assalamualaikum!</h1>
+            <textarea autofocus id="prompt-input" placeholder="What would you like to learn today?"></textarea>
+        </div>
+        <div id="typing-tip" class="hidden">
+            just press enter to search
+        </div>
+    </div>
+
+    <div id="result-page" class="page">
+        <div class="close">
+            <a onclick="goBack()" class="back-btn"><span class="material-symbols-rounded">close</span></a>
+        </div>
+        <div class="container">
+            <div id="result-text"></div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/autosize@6.0.1/dist/autosize.min.js"></script>
+    <script src="script.js" type="module"></script>
+    <script>
+        function goBack() {
+            $("#input-page").addClass("active");
+            $("#result-page").removeClass("active");
+            $("#prompt-input").focus();
+        }
+    </script>
+</body>
+</html>

@@ -1,0 +1,24 @@
+{
+  "name": "akh",
+  "main": "app/app.ts",
+  "version": "0.0.1-experimental",
+  "private": true,
+  "dependencies": {
+    "@nativescript/core": "~8.9.0",
+    "@nativescript/geolocation": "^9.0.0",
+    "@nativescript/theme": "^3.1.0",
+    "axios": "^1.8.1",
+    "geolocation": "^0.0.0",
+    "svelte-native": "~1.0.9"
+  },
+  "devDependencies": {
+    "@nativescript/preview-cli": "1.0.14",
+    "@nativescript/types": "~8.9.0",
+    "@nativescript/webpack": "^4.1.0",
+    "svelte": "~4.2.2",
+    "svelte-loader": "^3.1.9",
+    "svelte-native-preprocessor": "^1.0.0",
+    "svelte-preprocess": "^5.0.4",
+    "typescript": "~5.4.0"
+  }
+}
