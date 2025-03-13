@@ -2,21 +2,69 @@
 // also remember to swap model to phi 4 for multilingualism and better output quality and performance
 
 
-
-
-
-
-
-
-
-
 import { pipeline, TextStreamer } from 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.4.0';
 import dotenv from 'dotenv';
+import { TextRank } from 'textrank-js';
 
 dotenv.config();
 
 let generator; // Global generator variable, da?
 let input = $('#prompt-input');
+
+// Add cache for processed content
+const processedCache = new Map();
+
+// TextRank implementation for extractive summarization
+function extractiveSummarize(text, percentage = 0.4) {
+    const textrank = new TextRank();
+    const sentences = textrank.summarize(text);
+    const topN = Math.ceil(sentences.length * percentage);
+    return sentences.slice(0, topN).join(' ');
+}
+
+// Chunk text for parallel processing
+function chunkText(text, chunkSize = 250) {
+    const words = text.split(' ');
+    const chunks = [];
+    for (let i = 0; i < words.length; i += chunkSize) {
+        chunks.push(words.slice(i, i + chunkSize).join(' '));
+    }
+    return chunks;
+}
+
+// Initialize lightweight model for abstractive summarization
+async function initializeLightModel() {
+    return await pipeline(
+        "summarization",
+        "Xenova/distilbart-cnn-6-6",
+        { 
+            dtype: "float16",
+            device: 'webgpu',
+            batchSize: 4
+        }
+    );
+}
+
+// Parallel batch processing of chunks
+async function batchProcess(chunks, model) {
+    const batchSize = 4;
+    const results = [];
+    
+    for (let i = 0; i < chunks.length; i += batchSize) {
+        const batch = chunks.slice(i, i + batchSize);
+        const batchPromises = batch.map(chunk => 
+            model(chunk, {
+                max_length: 130,
+                min_length: 30,
+                do_sample: false
+            })
+        );
+        const batchResults = await Promise.all(batchPromises);
+        results.push(...batchResults);
+    }
+    
+    return results;
+}
 
 $(document).ready(function(){
     autosize(input);
@@ -83,6 +131,7 @@ initializePipeline();
 const GOOGLE_API_KEY = process.env.GOOGLE_API_KEY;
 const SEARCH_ENGINE_ID = process.env.SEARCH_ENGINE_ID;
 
+// Modified searchAndFetchContent function
 async function searchAndFetchContent(query) {
     try {
         const searchUrl = `https://www.googleapis.com/customsearch/v1?key=${GOOGLE_API_KEY}&cx=${SEARCH_ENGINE_ID}&q=${encodeURIComponent(query)}`;
@@ -135,14 +184,40 @@ async function searchAndFetchContent(query) {
             }
         }
 
-        // Return the array of results, not a formatted string
-        return webResults;
+        const processedResults = await Promise.all(webResults.map(async result => {
+            const cacheKey = result.url;
+            
+            if (processedCache.has(cacheKey)) {
+                return processedCache.get(cacheKey);
+            }
+
+            // Stage 1: Extractive Summarization
+            const extractedText = extractiveSummarize(result.content);
+            
+            // Stage 2: Chunk and Process
+            const chunks = chunkText(extractedText);
+            const lightModel = await initializeLightModel();
+            const summaries = await batchProcess(chunks, lightModel);
+            
+            const processedContent = {
+                title: result.title,
+                summary: summaries.join('\n'),
+                quotes: result.quotes,
+                url: result.url
+            };
+            
+            processedCache.set(cacheKey, processedContent);
+            return processedContent;
+        }));
+
+        return processedResults;
     } catch (error) {
         console.error('Search failed:', error);
         return [];
     }
 }
 
+// Modified generateThoughts function
 async function generateThoughts() {
     console.log('We have reached the function!');
     const trimmedInput = input.val().trim();
@@ -160,13 +235,11 @@ async function generateThoughts() {
     resultElement.text('Searching for relevant information...');
     resultElement.addClass('thinking');
 
-    $('#input-page').removeClass('active');
-    $('#input-page').addClass('inactive');
-    $('#result-page').removeClass('inactive');
-    $('#result-page').addClass('active');
+    $('#input-page').removeClass('active').addClass('inactive');
+    $('#result-page').removeClass('inactive').addClass('active');
 
     try {
-        const webResults = await searchAndFetchContent(trimmedInput);
+        const processedResults = await searchAndFetchContent(trimmedInput);
         
         const systemPrompt = `You are a careful Islamic scholar following these STRICT rules:
         1. ONLY use information provided in the context below
@@ -184,9 +257,9 @@ async function generateThoughts() {
            Scholarly Positions: (summary of views)
            Guidance: (based strictly on above)`;
 
-        // Prepare context from web results
-        const webContext = webResults.map(result => 
-            `Source: ${result.title}\n${result.content}\n---\n`
+        const webContext = processedResults.map(result => 
+            `Source: ${result.title}\n${result.summary}\n` +
+            `Quotes: ${result.quotes.map(q => `"${q.text}" [${q.source}]`).join('\n')}\n---\n`
         ).join('\n');
 
         const summaryPrompt = "Carefully extract and organize the following Islamic information, maintaining exact quotes:\n" +
