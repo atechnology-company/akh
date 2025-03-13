@@ -11,6 +11,9 @@
 
 
 import { pipeline, TextStreamer } from 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.4.0';
+import dotenv from 'dotenv';
+
+dotenv.config();
 
 let generator; // Global generator variable, da?
 let input = $('#prompt-input');
@@ -77,8 +80,8 @@ async function initializePipeline() {
 initializePipeline();
 
 // Google Custom Search configuration
-const GOOGLE_API_KEY = 'AIzaSyAhhqXAR-v2gJJorP6xKBywS6g0ia5L6V0';
-const SEARCH_ENGINE_ID = '73957e2fdc3504b4c';
+const GOOGLE_API_KEY = process.env.GOOGLE_API_KEY;
+const SEARCH_ENGINE_ID = process.env.SEARCH_ENGINE_ID;
 
 async function searchAndFetchContent(query) {
     try {
