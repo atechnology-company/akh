@@ -12,6 +12,12 @@ app.get('/proxy', async (req, res) => {
         return res.status(400).send('URL parameter is required');
     }
 
+    const allowedUrls = ['https://islamqa.org/'];
+    const isValidUrl = allowedUrls.some(allowedUrl => url.startsWith(allowedUrl));
+    if (!isValidUrl) {
+        return res.status(400).send('Invalid URL parameter');
+    }
+
     try {
         const response = await axios.get(url, {
             headers: {
