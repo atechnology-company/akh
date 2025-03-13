@@ -1,6 +1,7 @@
 const express = require('express');
 const cors = require('cors');
 const axios = require('axios');
+const he = require('he');
 const app = express();
 const port = 3000;
 
@@ -26,7 +27,7 @@ app.get('/proxy', async (req, res) => {
         });
         res.send(response.data);
     } catch (error) {
-        res.status(500).send(error.message);
+        res.status(500).send(he.encode(error.message));
     }
 });
 
