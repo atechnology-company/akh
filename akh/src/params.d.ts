@@ -1,0 +1,1 @@
+export type ParamMatcher = (param: string) => boolean;

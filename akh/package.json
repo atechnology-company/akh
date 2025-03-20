@@ -1,7 +1,7 @@
 {
 	"name": "akh",
 	"private": true,
-	"version": "0.0.1",
+	"version": "0.0.1-experimental",
 	"type": "module",
 	"scripts": {
 		"dev": "vite dev",
@@ -11,20 +11,13 @@
 		"check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
 		"check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
 		"format": "prettier --write .",
-		"lint": "prettier --check . && eslint .",
-		"storybook": "storybook dev -p 6006",
-		"build-storybook": "storybook build"
+		"lint": "prettier --check . && eslint ."
 	},
 	"devDependencies": {
-		"@chromatic-com/storybook": "^3",
 		"@eslint/compat": "^1.2.5",
 		"@eslint/js": "^9.18.0",
-		"@storybook/addon-essentials": "^8.6.7",
-		"@storybook/addon-svelte-csf": "^5.0.0-next.0",
 		"@storybook/blocks": "^8.6.7",
-		"@storybook/experimental-addon-test": "^8.6.7",
 		"@storybook/svelte": "^8.6.7",
-		"@storybook/sveltekit": "^8.6.7",
 		"@storybook/test": "^8.6.7",
 		"@sveltejs/adapter-auto": "^4.0.0",
 		"@sveltejs/kit": "^2.16.0",
@@ -51,11 +44,12 @@
 		"vitest": "^3.0.9"
 	},
 	"dependencies": {
-		"@inlang/paraglide-sveltekit": "^0.15.5"
-	},
-	"pnpm": {
-		"onlyBuiltDependencies": [
-			"esbuild"
-		]
+		"@huggingface/transformers": "^3.4.0",
+		"@inlang/paraglide-sveltekit": "^0.15.5",
+		"@nativescript/core": "^8.9.1",
+		"@nativescript/geolocation": "^9.0.0",
+		"@nativescript/webpack": "^5.0.23",
+		"jquery": "^3.7.1",
+		"nativescript": "^8.9.1"
 	}
 }

@@ -1,2 +1,70 @@
-<h1>Welcome to SvelteKit</h1>
-<p>Visit <a href="https://svelte.dev/docs/kit">svelte.dev/docs/kit</a> to read the documentation</p>
+<script lang="ts">
+    import { onMount } from 'svelte';
+    import Page1 from '$components/Page1.svelte';
+    import Page2 from '$components/Page2.svelte';
+    import salah from '$components/salah.svelte';
+    import Page4 from '$components/Page4.svelte';
+    import alif from '$components/alif.svelte';
+
+    let pages = [Page1, Page2, salah, Page4, alif];
+    let currentPageIndex = 0;
+
+    const nextPage = () => {
+        currentPageIndex = (currentPageIndex + 1) % pages.length;
+    };
+
+    const prevPage = () => {
+        currentPageIndex = (currentPageIndex - 1 + pages.length) % pages.length;
+    };
+
+    let interval: number;
+    onMount(() => {
+        interval = setInterval(nextPage, 5000); // Auto-slide every 5 seconds
+        return () => clearInterval(interval);
+    });
+
+    let touchStartX = 0;
+    let touchEndX = 0;
+
+    const handleTouchStart = (e: TouchEvent) => {
+        touchStartX = e.touches[0].clientX;
+    };
+
+    const handleTouchEnd = (e: TouchEvent) => {
+        touchEndX = e.changedTouches[0].clientX;
+        const swipeDistance = touchEndX - touchStartX;
+        
+        if (Math.abs(swipeDistance) > 50) { // minimum swipe distance
+            if (swipeDistance > 0) {
+                prevPage();
+            } else {
+                nextPage();
+            }
+        }
+    };
+</script>
+
+<style>
+    .carousel {
+        position: relative;
+        width: 100%;
+        height: 100vh;
+        overflow: hidden;
+        touch-action: pan-y pinch-zoom;
+    }
+
+    .carousel-content {
+        width: 100%;
+        height: 100%;
+    }
+</style>
+
+<div class="carousel" 
+    on:touchstart={handleTouchStart} 
+    on:touchend={handleTouchEnd}>
+    <div class="carousel-content">
+        {#if pages[currentPageIndex]}
+            <svelte:component this={pages[currentPageIndex]} />
+        {/if}
+    </div>
+</div>
