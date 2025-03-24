@@ -1,12 +1,12 @@
 <script lang="ts">
     import { onMount } from 'svelte';
-    import Page1 from '$components/Page1.svelte';
-    import Page2 from '$components/Page2.svelte';
-    import salah from '$components/salah.svelte';
-    import Page4 from '$components/Page4.svelte';
-    import alif from '$components/alif.svelte';
+    import settings from '../components/settings.svelte';
+    import qibla from '../components/qibla.svelte';
+    import salah from '../components/salah.svelte';
+    import mosques from '../components/mosques.svelte';
+    import alif from '../components/alif.svelte';
 
-    let pages = [Page1, Page2, salah, Page4, alif];
+    let pages = [settings, qibla, salah, mosques, alif];
     let currentPageIndex = 0;
 
     const nextPage = () => {
@@ -17,7 +17,7 @@
         currentPageIndex = (currentPageIndex - 1 + pages.length) % pages.length;
     };
 
-    let interval: number;
+    let interval: ReturnType<typeof setInterval>;
     onMount(() => {
         interval = setInterval(nextPage, 5000); // Auto-slide every 5 seconds
         return () => clearInterval(interval);

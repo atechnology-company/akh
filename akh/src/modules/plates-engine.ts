@@ -1,35 +1,22 @@
 import { pipeline, TextStreamer } from '@huggingface/transformers';
-import { TextRank } from './modules/textrank.ts';
+import { TextRank } from '../modules/textrank';
+import dotenv from 'dotenv';
+import type { 
+    Config, 
+    SearchResult, 
+    Quote, 
+    GeminiResponse, 
+    Tokenizer, 
+    CallbackFunction 
+} from '../types';
 
-interface Config {
-    GOOGLE_API_KEY: string;
-    SEARCH_ENGINE_ID: string;
-    GEMINI_API_KEY: string;
-    GEMINI_API_URL: string;
-}
-
-interface SearchResult {
-    title: string;
-    content: string;
-    quotes: Quote[];
-    url: string;
-    query: string;
-}
-
-interface Quote {
-    text: string;
-    source: string;
-}
-
-interface GeminiResponse {
-    text: string;
-}
+dotenv.config();
 
 const config: Config = {
-    GOOGLE_API_KEY: 'key',
-    SEARCH_ENGINE_ID: 'key',
-    GEMINI_API_KEY: 'key',
-    GEMINI_API_URL: 'https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent'
+    GOOGLE_API_KEY: process.env.GOOGLE_API_KEY || '',
+    SEARCH_ENGINE_ID: process.env.SEARCH_ENGINE_ID || '',
+    GEMINI_API_KEY: process.env.GEMINI_API_KEY || '',
+    GEMINI_API_URL: 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent'
 };
 
 const ASSISTANT_PROMPT = `You are a helpful AI assistant. Please:
@@ -174,11 +161,11 @@ async function optimizeQuery(query: string, definitionMode = false) {
         });
 
         // Extract and limit queries
-        const queries = output[0].generated_text
+        const queries: string[] = (output[0] as { generated_text: string }).generated_text
             .split('\n')
-            .filter(line => line.trim().startsWith('-'))
-            .map(line => line.trim().substring(2).trim())
-            .filter(query => query.length > 0 && !query.includes('Example'))
+            .filter((line: string) => line.trim().startsWith('-'))
+            .map((line: string) => line.trim().substring(2).trim())
+            .filter((query: string) => query.length > 0 && !query.includes('Example'))
             .slice(0, 3); // Get only 3 optimized queries
 
         // Return max 5 queries total including original
@@ -320,12 +307,6 @@ async function searchAndFetchContent(originalQuery: string) {
 }
 
 // Modify the streaming part of generateThoughts
-interface Tokenizer {
-    decode(tokens: number[]): Promise<string>;
-}
-
-type CallbackFunction = (text: string) => Promise<void>;
-
 class CustomTextStreamer {
     private tokenizer: Tokenizer;
     private text: string;
@@ -480,7 +461,9 @@ async function generateWithGemini(prompt: string, temperature: number = 0.7): Pr
 
 async function generateThoughts() {
     console.log('We have reached the function!');
-    const trimmedInput = input.val().trim();
+        const input = $('#input-field');
+        const value = input.val();
+        const trimmedInput = typeof value === 'string' ? value.trim() : '';
     if (trimmedInput === "") {
         alert('hey! you forgot to write something :|');
         return;
@@ -575,7 +558,8 @@ Provide a structured response following the format above.`;
         
     } catch (error) {
         resultElement.removeClass('thinking');
-        resultElement.html(`<div class="error-message">Error occurred: ${error.message}</div>`);
+        const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
+        resultElement.html(`<div class="error-message">Error occurred: ${errorMessage}</div>`);
         console.error('Error details:', error);
     }
 }

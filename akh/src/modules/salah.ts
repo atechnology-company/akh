@@ -1,34 +1,38 @@
 import * as geolocation from '@nativescript/geolocation';
+import type { PrayerTimes, AladhanResponse } from '../types';
 
-  let prayerTimes = {
-    fajr: '',
-    dhuhr: '',
-    asr: '',
-    maghrib: '',
-    isha: ''
-  };
-  
-  export async function getPrayerTimes() {
+let prayerTimes: PrayerTimes = {
+  fajr: '',
+  dhuhr: '',
+  asr: '',
+  maghrib: '',
+  isha: ''
+};
+
+export async function getPrayerTimes(): Promise<PrayerTimes | undefined> {
+  try {
     await geolocation.enableLocationRequest();
     const location = await geolocation.getCurrentLocation({});
     const lat = location.latitude;
     const lng = location.longitude;
     const date = new Date();
-    const url = `http://api.aladhan.com/v1/timings/${date.getTime()/1000}?latitude=${lat}&longitude=${lng}&method=2`;
+    const url = `http://api.aladhan.com/v1/timings/${Math.floor(date.getTime()/1000)}?latitude=${lat}&longitude=${lng}&method=2`;
     
-    try {
-      const response = await fetch(url);
-      const data = await response.json();
-      const timings = data.data.timings;
-      prayerTimes = {
-        fajr: timings.Fajr,
-        dhuhr: timings.Dhuhr,
-        asr: timings.Asr,
-        maghrib: timings.Maghrib,
-        isha: timings.Isha
-      };
-      return prayerTimes;
-    } catch (error) {
-      console.error('Error fetching prayer times:', error);
-    }
+    const response = await fetch(url);
+    const data = await response.json() as AladhanResponse;
+    const timings = data.data.timings;
+    
+    prayerTimes = {
+      fajr: timings.Fajr,
+      dhuhr: timings.Dhuhr,
+      asr: timings.Asr,
+      maghrib: timings.Maghrib,
+      isha: timings.Isha
+    };
+    
+    return prayerTimes;
+  } catch (error) {
+    console.error('Error fetching prayer times:', error);
+    return undefined;
   }
+}

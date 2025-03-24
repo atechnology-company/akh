@@ -2,10 +2,10 @@ import { pipeline, TextStreamer } from 'https://cdn.jsdelivr.net/npm/@huggingfac
 import { TextRank } from './textrank.js';
 
 const config = {
-    GOOGLE_API_KEY: 'key',
-    SEARCH_ENGINE_ID: 'key',
-    GEMINI_API_KEY: 'key',
-    GEMINI_API_URL: 'https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent'
+    GOOGLE_API_KEY: '',
+    SEARCH_ENGINE_ID: '',
+    GEMINI_API_KEY: '',
+    GEMINI_API_URL: 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent'
 };
 
 const ISLAMIC_SCHOLAR_PROMPT = `You are a careful Islamic scholar following these STRICT rules:

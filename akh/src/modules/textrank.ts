@@ -30,8 +30,7 @@ export class TextRank {
 
     private buildSimilarityMatrix(): void {
         const n = this.sentences.length;
-        this.similarityMatrix = Array(n).fill().map(() => Array(n).fill(0));
-        
+        this.similarityMatrix = Array(n).fill(0).map(() => Array(n).fill(0));        
         for (let i = 0; i < n; i++) {
             for (let j = 0; j < n; j++) {
                 if (i !== j) {
