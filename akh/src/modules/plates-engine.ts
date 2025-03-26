@@ -1,6 +1,5 @@
 import { pipeline, TextStreamer } from '@huggingface/transformers';
 import { TextRank } from '../modules/textrank';
-import dotenv from 'dotenv';
 import type { 
     Config, 
     SearchResult, 
@@ -10,13 +9,13 @@ import type {
     CallbackFunction 
 } from '../types';
 
-dotenv.config();
-
+// Get environment variables from window.__ENV__ or use empty strings as fallback
 const config: Config = {
-    GOOGLE_API_KEY: process.env.GOOGLE_API_KEY || '',
-    SEARCH_ENGINE_ID: process.env.SEARCH_ENGINE_ID || '',
-    GEMINI_API_KEY: process.env.GEMINI_API_KEY || '',
-    GEMINI_API_URL: 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent'
+    GOOGLE_API_KEY: (window as any).__ENV__?.GOOGLE_API_KEY || '',
+    SEARCH_ENGINE_ID: (window as any).__ENV__?.SEARCH_ENGINE_ID || '',
+    GEMINI_API_KEY: (window as any).__ENV__?.GEMINI_API_KEY || '',
+    GEMINI_API_URL: 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent',
+    IS_DEV: (window as any).__ENV__?.NODE_ENV === 'development'
 };
 
 const ASSISTANT_PROMPT = `You are a helpful AI assistant. Please:
@@ -29,51 +28,33 @@ const ASSISTANT_PROMPT = `You are a helpful AI assistant. Please:
    - Summarized information
    - General guidance based on provided information`;
 
-let generator: any;
 let summarizer: any;
 
 // Initialize the pipeline and assign generator globally
-async function initializePipeline() {
-    const loadingOverlay = $('#loading-overlay');
-    loadingOverlay.addClass('hidden');
-    
+export async function initializePipeline() {
     try {
-        console.log('Initializing models');
-        // Initialize models sequentially to avoid memory issues
-        generator = await pipeline(
-            "text-generation",
-            "onnx-community/granite-3.0-2b-instruct",
-            { 
-                dtype: "q4f16",
-                device: 'webgpu',
-            }
-        );
-        console.log('Generator initialized');
-
+        console.log('Initializing summarizer model');
         summarizer = await pipeline(
             "summarization",
-            "Xenova/bart-large-cnn",
+            "Xenova/distilbart-cnn-6-6", // Smaller BART model
             { 
                 dtype: "fp32",
-                device: 'webgpu',
+                device: "webgpu"
             }
         );
         console.log('Summarizer initialized');
-
     } catch (error) {
         console.error('Factory failed to start:', error);
-        alert('Model initialization failed. Please refresh the page and try again.');
-    } finally {
-        if (loadingOverlay) {
-            loadingOverlay.removeClass('hidden');
-        }
+        throw error;
     }
 }
 
-// Start factory when page loads
-initializePipeline();
+// Only initialize if we're in the browser
+if (typeof window !== 'undefined') {
+    initializePipeline();
+}
 
-// Modify summarizeContent function
+// Summarize content function 
 async function summarizeContent(content: string, quotes: Array<Quote>): Promise<string> {
     try {
         if (!content || typeof content !== 'string') {
@@ -93,42 +74,41 @@ async function summarizeContent(content: string, quotes: Array<Quote>): Promise<
 
         console.log('Clean content length:', cleanContent.length);
 
-        const summary = await summarizer(cleanContent, {
-            max_length: 512,
-            min_length: 50,
-            do_sample: false,
-            early_stopping: true,
-            no_repeat_ngram_size: 3,
-        });
-
-        console.log('Raw BART output:', summary);
-
-        // Check for the correct BART output structure
-        if (summary?.[0]?.summary_text) {
-            console.log('Valid BART summary found');
-            let finalContent = summary[0].summary_text;
-
-            if (quotes?.length > 0) {
-                finalContent += '\n\nRelevant Quotes:\n' + 
-                    quotes.map(q => `"${q.text}" [${q.source}]`).join('\n');
+        let summarized = '';
+        if (summarizer) {
+            const summary = await summarizer(cleanContent, {
+                max_length: 256,
+                min_length: 30,
+                do_sample: false
+            });
+            
+            if (summary?.[0]?.summary_text) {
+                summarized = summary[0].summary_text;
             }
-
-            return finalContent;
         }
 
-        console.warn('Unexpected BART output structure:', summary);
-        throw new Error('Invalid BART output structure');
+        if (!summarized) {
+            // Fallback to TextRank
+            const textRank = new TextRank();
+            summarized = textRank.summarize(content, 3) || content;
+        }
+
+        if (quotes?.length > 0) {
+            summarized += '\n\nRelevant Quotes:\n' + 
+                quotes.map(q => `"${q.text}" [${q.source}]`).join('\n');
+        }
+
+        return summarized;
 
     } catch (error) {
         console.error('Summarization error:', error);
         const textRank = new TextRank();
-        return textRank.summarize(content, 5) || content;
+        return textRank.summarize(content, 3) || content;
     }
 }
 
+// Optimize search queries
 async function optimizeQuery(query: string, definitionMode = false) {
-    if (!generator) return [query];
-
     const optimizationPrompt = definitionMode ? 
         `Task: Generate 2 focused search queries to understand exactly what "${query}" is.
         Rules:
@@ -151,14 +131,8 @@ async function optimizeQuery(query: string, definitionMode = false) {
         `;
 
     try {
-        const output = await generator(optimizationPrompt, {
-            max_new_tokens: 256,
-            temperature: 0.3, // Reduced temperature for more focused output
-            do_sample: false, // Disable sampling for more deterministic results
-            eos_token_id: generator.tokenizer.eos_token_id,
-            repetition_penalty: 1.2, // Increased to reduce repetition
-            presence_penalty: 1.1 // Add presence penalty to encourage focus on query terms
-        });
+        const outputText = await generateWithGemini(optimizationPrompt, 0.3);
+        const output = [{ generated_text: outputText }];
 
         // Extract and limit queries
         const queries: string[] = (output[0] as { generated_text: string }).generated_text
@@ -176,116 +150,119 @@ async function optimizeQuery(query: string, definitionMode = false) {
     }
 }
 
-// Add this function near the top with other utility functions
-function updateStatus(text: string, resultElement: JQuery<HTMLElement>) {
-    // Grey out previous content
-    const existingContent = resultElement.html();
-    if (existingContent) {
-        resultElement.html(`
-            <div class="previous-status">${existingContent}</div>
-            <div class="current-status">${text}</div>
-        `);
-    } else {
-        resultElement.html(`<div class="current-status">${text}</div>`);
-    }
-    
-    // Scroll to bottom
-    resultElement.scrollTop(resultElement[0].scrollHeight);
-}
-
-// Modify searchAndFetchContent to use the new status update function
-async function searchAndFetchContent(originalQuery: string) {
+// Search and fetch content with a status callback
+export async function searchAndFetchContent(
+    originalQuery: string,
+    statusCallback: (status: string) => void
+): Promise<SearchResult[]> {
     try {
         const optimizedQueries = await optimizeQuery(originalQuery);
         console.log('Optimized queries:', optimizedQueries);
 
-        const resultElement = $('#result-text');
-        const webResults = [];
+        const webResults: SearchResult[] = [];
         const processedUrls = new Set(); // Track processed URLs
         const quoteRegex = /"([^"]+)"\s*[\[\(]([^\]\)]+)[\]\)]/g;
 
         for (let queryIndex = 0; queryIndex < optimizedQueries.length; queryIndex++) {
             const query = optimizedQueries[queryIndex];
-            updateStatus(`Searching with query ${queryIndex + 1}: "${query}"`, resultElement);
+            statusCallback(`Searching with query ${queryIndex + 1}: "${query}"`);
 
-            const searchUrl = `https://www.googleapis.com/customsearch/v1?key=${config.GOOGLE_API_KEY}&cx=${config.SEARCH_ENGINE_ID}&q=${encodeURIComponent(query)}`;
-            const searchResponse = await fetch(searchUrl);
-            const searchData = await searchResponse.json();
-
-            if (!searchData.items || searchData.items.length === 0) continue;
-
-            // Try each result until we find a new URL
-            let foundNewUrl = false;
-            for (const item of searchData.items) {
-                if (processedUrls.has(item.link)) {
-                    console.log(`Skipping duplicate URL: ${item.link}`);
+            try {
+                // Use proxy server for search
+                const searchUrl = `http://localhost:3000/proxy?url=${encodeURIComponent(`https://www.googleapis.com/customsearch/v1?key=${config.GOOGLE_API_KEY}&cx=${config.SEARCH_ENGINE_ID}&q=${encodeURIComponent(query)}`)}`;
+                const searchResponse = await fetch(searchUrl);
+                
+                if (!searchResponse.ok) {
+                    console.error(`Search response error: ${searchResponse.status} ${searchResponse.statusText}`);
+                    const errorText = await searchResponse.text();
+                    console.error('Error response:', errorText);
                     continue;
                 }
 
-                try {
-                    processedUrls.add(item.link); // Add URL to tracked set
-                    const html = await fetchWithRetry(item.link, {
-                        method: 'GET',
-                        headers: {
-                            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-                        }
-                    });
-
-                    const doc = new DOMParser().parseFromString(html, 'text/html');
-                    const selectors = ['.content', 'article', 'main', '.entry-content', '.post-content', '#content'];
-                    let content = '';
-                    
-                    for (const selector of selectors) {
-                        const element = doc.querySelector(selector);
-                        if (element?.textContent) {
-                            content = element.textContent.trim();
-                            break;
-                        }
-                    }
-
-                    if (!content && item.snippet) {
-                        content = item.snippet;
-                    }
-
-                    if (content) {
-                        const quotes = [];
-                        let match;
-                        while ((match = quoteRegex.exec(content)) !== null) {
-                            quotes.push({
-                                text: match[1],
-                                source: match[2]
-                            });
-                        }
-
-                        updateStatus(`Summarizing content from ${item.title}`, resultElement);
-
-                        const summarizedContent = await summarizeContent(content, quotes);
-                        updateStatus(`Results from query "${query}":\n${summarizedContent}\n\n---`, resultElement);
-
-                        webResults.push({
-                            title: item.title,
-                            content: summarizedContent,
-                            quotes: quotes,
-                            url: item.link,
-                            query: query // Store which query found this result
-                        });
-                        foundNewUrl = true;
-                        break; // Found a valid new URL, move to next query
-                    }
-                } catch (error) {
-                    console.error(`Failed to process result ${item.link} for query "${query}":`, error);
-                    continue; // Try next result
+                const searchData = await searchResponse.json();
+                if (!searchData.items || searchData.items.length === 0) {
+                    console.log(`No results found for query: ${query}`);
+                    continue;
                 }
-            }
 
-            if (!foundNewUrl) {
-                console.log(`No new URLs found for query: ${query}`);
+                // Try each result until we find a new URL
+                let foundNewUrl = false;
+                for (const item of searchData.items) {
+                    if (processedUrls.has(item.link)) {
+                        console.log(`Skipping duplicate URL: ${item.link}`);
+                        continue;
+                    }
+
+                    try {
+                        processedUrls.add(item.link); // Add URL to tracked set
+                        // Use proxy server for fetching content
+                        const proxyUrl = `http://localhost:3000/proxy?url=${encodeURIComponent(item.link)}`;
+                        const html = await fetchWithRetry(proxyUrl, {
+                            method: 'GET',
+                            headers: {
+                                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+                            }
+                        });
+
+                        const doc = new DOMParser().parseFromString(html, 'text/html');
+                        const selectors = ['.content', 'article', 'main', '.entry-content', '.post-content', '#content'];
+                        let content = '';
+                        
+                        for (const selector of selectors) {
+                            const element = doc.querySelector(selector);
+                            if (element?.textContent) {
+                                content = element.textContent.trim();
+                                break;
+                            }
+                        }
+
+                        if (!content && item.snippet) {
+                            content = item.snippet;
+                        }
+
+                        if (content) {
+                            const quotes: Quote[] = [];
+                            let match;
+                            while ((match = quoteRegex.exec(content)) !== null) {
+                                quotes.push({
+                                    text: match[1],
+                                    source: match[2]
+                                });
+                            }
+
+                            statusCallback(`Summarizing content from ${item.title}`);
+
+                            const summarizedContent = await summarizeContent(content, quotes);
+                            statusCallback(`Results from query "${query}":\n${summarizedContent}\n\n---`);
+
+                            webResults.push({
+                                title: item.title,
+                                content: summarizedContent,
+                                quotes: quotes,
+                                url: item.link,
+                                query: query // Store which query found this result
+                            });
+                            foundNewUrl = true;
+                            break; // Found a valid new URL, move to next query
+                        }
+                    } catch (error) {
+                        console.error(`Failed to process result ${item.link} for query "${query}":`, error);
+                        continue; // Try next result
+                    }
+                }
+
+                if (!foundNewUrl) {
+                    console.log(`No new URLs found for query: ${query}`);
+                }
+            } catch (error) {
+                console.error(`Failed to search with query "${query}":`, error);
+                continue; // Try next query
             }
         }
 
         // Create final combined summary
         if (webResults.length > 0) {
-            updateStatus(`Creating final summary from ${webResults.length} sources...`, resultElement);
+            statusCallback(`Creating final summary from ${webResults.length} sources...`);
 
             const combinedContent = webResults.map(result => 
                 `Source [via "${result.query}"]: ${result.title}\n${result.content}`
@@ -296,7 +273,7 @@ async function searchAndFetchContent(originalQuery: string) {
                 webResults.flatMap(result => result.quotes)
             );
 
-            updateStatus(`Final Combined Summary:\n${finalSummary}`, resultElement);
+            statusCallback(`Final Combined Summary:\n${finalSummary}`);
         }
 
         return webResults;
@@ -306,7 +283,7 @@ async function searchAndFetchContent(originalQuery: string) {
     }
 }
 
-// Modify the streaming part of generateThoughts
+// Custom text streamer for token handling
 class CustomTextStreamer {
     private tokenizer: Tokenizer;
     private text: string;
@@ -401,6 +378,7 @@ class CustomTextStreamer {
     }
 }
 
+// Utility function for fetching with retry
 async function fetchWithRetry(url: string, options: RequestInit, retries: number = 3): Promise<string> {
     for (let i = 0; i < retries; i++) {
         try {
@@ -429,21 +407,20 @@ async function fetchWithRetry(url: string, options: RequestInit, retries: number
     throw new Error('All retry attempts failed');
 }
 
-async function generateWithGemini(prompt: string, temperature: number = 0.7): Promise<string> {
-    const response = await fetch(config.GEMINI_API_URL, {
+// Generate content with Gemini API
+export async function generateWithGemini(prompt: string, temperature: number = 0.7): Promise<string> {
+    const response = await fetch('http://localhost:3000/gemini', {
         method: 'POST',
         headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${config.GEMINI_API_KEY}`
+            'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-            contents: [{ text: prompt }],
-            generationConfig: {
-                temperature,
-                topK: 40,
-                topP: 0.8,
-                maxOutputTokens: 2048
-            }
+            apiKey: config.GEMINI_API_KEY,
+            prompt,
+            temperature,
+            topK: 40,
+            topP: 0.8,
+            maxOutputTokens: 2048
         })
     });
 
@@ -452,39 +429,33 @@ async function generateWithGemini(prompt: string, temperature: number = 0.7): Pr
     }
 
     const data = await response.json() as GeminiResponse;
-    if (!data?.text) {
-        throw new Error('Invalid response format from Gemini API');
+    
+    if (!data.text) {
+        throw new Error('Invalid or empty response from Gemini API');
     }
-
+    
     return data.text;
 }
 
-async function generateThoughts() {
-    console.log('We have reached the function!');
-        const input = $('#input-field');
-        const value = input.val();
-        const trimmedInput = typeof value === 'string' ? value.trim() : '';
-    if (trimmedInput === "") {
-        alert('hey! you forgot to write something :|');
-        return;
+// Main generation function that uses the status callback
+export async function generateContent(
+    input: string,
+    statusCallback: (status: string) => void
+): Promise<string> {
+    if (typeof window === 'undefined') {
+        throw new Error('generateContent must be run in browser context');
     }
 
-    if (!generator) {
-        alert("Generator not ready yet, wait like strong vodka in barrel");
-        return;
+    console.log('Starting content generation for:', input);
+    const trimmedInput = input.trim();
+    if (!trimmedInput) {
+        throw new Error('Empty input provided');
     }
-
-    const resultElement = $('#result-text');
-    resultElement.text('Searching for relevant information');
-    resultElement.addClass('thinking');
-
-    $('#input-page').removeClass('active');
-    $('#input-page').addClass('inactive');
-    $('#result-page').removeClass('inactive');
-    $('#result-page').addClass('active');
 
     try {
-        const webResults = await searchAndFetchContent(trimmedInput);
+        statusCallback('Searching for relevant information');
+        
+        const webResults = await searchAndFetchContent(trimmedInput, statusCallback);
         console.log('Web results gathered:', webResults.length);
         
         if (webResults.length === 0) {
@@ -522,7 +493,7 @@ Output Format:
 
 Begin Summary:`;
         
-        updateStatus('Processing information...', resultElement);
+        statusCallback('Processing information...');
         const organizedSummary = await generateWithGemini(summaryPrompt, 0.3);
 
         if (!organizedSummary) {
@@ -530,7 +501,7 @@ Begin Summary:`;
         }
 
         console.log('Organization phase complete. Length:', organizedSummary.length);
-        updateStatus('Organizing Information:\n\n' + organizedSummary, resultElement);
+        statusCallback('Organizing Information:\n\n' + organizedSummary);
 
         // Second phase: Generate final response using Gemini
         console.log('Starting response phase...');
@@ -543,7 +514,7 @@ Question: ${trimmedInput}
 
 Provide a structured response following the format above.`;
 
-        updateStatus('Formulating response...', resultElement);
+        statusCallback('Formulating response...');
         const finalResponse = await generateWithGemini(finalPrompt, 0.7);
 
         if (!finalResponse) {
@@ -551,17 +522,49 @@ Provide a structured response following the format above.`;
         }
 
         console.log('Response phase complete. Length:', finalResponse.length);
-
-        // Display final result
-        resultElement.removeClass('thinking');
-        resultElement.html(`<div class="final-response">${finalResponse}</div>`);
+        return finalResponse;
         
     } catch (error) {
-        resultElement.removeClass('thinking');
         const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
-        resultElement.html(`<div class="error-message">Error occurred: ${errorMessage}</div>`);
         console.error('Error details:', error);
+        throw new Error(errorMessage);
     }
 }
 
-export { generateThoughts };
+// For backward compatibility
+export async function generateThoughts(input: string): Promise<void> {
+    if (typeof window === 'undefined') {
+        throw new Error('generateThoughts must be run in browser context');
+    }
+    
+    console.log('Calling legacy generateThoughts function');
+    const resultElement = document.getElementById('result-text');
+    
+    try {
+        if (!input.trim()) {
+            alert('hey! you forgot to write something :|');
+            return;
+        }
+        
+        const response = await generateContent(
+            input,
+            (status) => {
+                if (resultElement) {
+                    resultElement.innerHTML = status;
+                }
+            }
+        );
+        
+        if (resultElement) {
+            resultElement.innerHTML = `<div class="final-response">${response}</div>`;
+            resultElement.classList.remove('thinking');
+        }
+    } catch (error) {
+        if (resultElement) {
+            resultElement.classList.remove('thinking');
+            const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
+            resultElement.innerHTML = `<div class="error-message">Error occurred: ${errorMessage}</div>`;
+        }
+        console.error('Error in generateThoughts:', error);
+    }
+}

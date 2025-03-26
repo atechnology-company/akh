@@ -1,38 +1,40 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import autosize from 'autosize';
-
-  interface HTMLElementEvent<T extends HTMLElement> extends Event {
-    target: T;
-  }
+  import { generateContent } from '../modules/plates-engine';
+  import * as AlifUI from '../modules/alif-ui';
+  import type { AlifComponentData } from '../types';
+  import { marked } from 'marked';
 
   let promptInput: HTMLTextAreaElement;
   let greeting: HTMLHeadingElement;
   let typingTip: HTMLDivElement;
-  let loadingOverlay: HTMLDivElement;
   let resultText: string = '';
   let isInputPage: boolean = true;
+  let isLoading: boolean = false;
+
+  // Create component data object for passing to UI functions
+  const componentData: AlifComponentData = {
+    promptInput: null,
+    greeting: null,
+    typingTip: null,
+    resultText: '',
+    isInputPage: true,
+    loadingOverlay: null
+  };
 
   onMount(() => {
-    if (promptInput) {
-      autosize(promptInput);
-    }
-    if (loadingOverlay) {
-      loadingOverlay.classList.add('hidden');
-    }
+    // Update component data with references
+    componentData.promptInput = promptInput;
+    componentData.greeting = greeting;
+    componentData.typingTip = typingTip;
+    
+    // Initialize UI
+    AlifUI.initializeUI(componentData);
   });
 
-  function handleInput(event: HTMLElementEvent<HTMLTextAreaElement>): void {
-      if (greeting && promptInput.value.length > 0) {
-        greeting.classList.add('hidden');
-        promptInput.classList.add('modified');
-        typingTip.classList.remove('hidden');
-      } else if (greeting && promptInput.value.length === 0) {
-        greeting.classList.remove('hidden');
-        promptInput.classList.remove('modified');
-        typingTip.classList.add('hidden');
-      }
-    }
+  function handleInput(event: Event): void {
+    AlifUI.handlePromptInput(event, componentData);
+  }
 
   function handleKeyPress(event: KeyboardEvent): void {
     if (event.key === 'Enter' && !event.shiftKey) {
@@ -41,27 +43,59 @@
     }
   }
 
-  function submitPrompt(): void {
-    isInputPage = false;
-    resultText = 'Your response will appear here...';
+  async function submitPrompt(): Promise<void> {
+    if (!promptInput?.value.trim()) return;
+    
+    try {
+      // First switch pages and show loading state
+      isInputPage = false;
+      componentData.isInputPage = false;
+      isLoading = true;
+      resultText = 'Searching for relevant information...';
+      AlifUI.switchToResultsPage();
+      
+      // Generate content with status updates
+      const response = await generateContent(
+        promptInput.value,
+        (status: string) => {
+          resultText = status;
+          AlifUI.updateStatus(status);
+        }
+      );
+      
+      // Display final result after a small delay to ensure transition is complete
+      setTimeout(() => {
+        resultText = response;
+        AlifUI.displayFinalResult(response);
+        isLoading = false;
+      }, 100);
+      
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
+      resultText = `Sorry, something went wrong: ${errorMessage}`;
+      AlifUI.displayError(errorMessage);
+      console.error('Error:', error);
+      isLoading = false;
+    }
   }
 
   function goBack(): void {
     isInputPage = true;
+    componentData.isInputPage = true;
     setTimeout(() => {
       if (promptInput) {
         promptInput.focus();
       }
     }, 0);
   }
-</script>
 
-<div id="loading-overlay" bind:this={loadingOverlay}>
-  <div class="loader-content">
-    <div class="loader"></div>
-    <p>initializing...</p>
-  </div>
-</div>
+  async function renderMarkdown(text: string): Promise<string> {
+    return marked(text, {
+      breaks: true,
+      gfm: true
+    });
+  }
+</script>
 
 <div id="input-page" class="page" class:active={isInputPage}>
   <div class="container">
@@ -72,7 +106,7 @@
       placeholder="What would you like to learn today?"
       on:input={handleInput}
       on:keypress={handleKeyPress}
-      autofocus
+      disabled={isLoading}
     ></textarea>
   </div>
   <div id="typing-tip" class="hidden" bind:this={typingTip}>
@@ -82,12 +116,22 @@
 
 <div id="result-page" class="page" class:active={!isInputPage}>
   <div class="close">
-    <button class="back-btn" on:click={goBack}>
+    <button class="back-btn" on:click={goBack} disabled={isLoading}>
       <span class="material-symbols-rounded">close</span>
     </button>
   </div>
   <div class="container">
     <div id="result-text">{resultText}</div>
+    {#if isLoading}
+      <div class="generation-indicator">
+        <div class="dots">
+          <span></span>
+          <span></span>
+          <span></span>
+        </div>
+        <div class="status-text">{resultText}</div>
+      </div>
+    {/if}
   </div>
 </div>
 
@@ -107,7 +151,7 @@
     -webkit-font-smoothing: antialiased;
   }
 
-  :global(body) {
+  #input-page, #result-page {
     margin: 0;
     padding: 0;
     font-family: 'Onest', sans-serif;
@@ -122,7 +166,10 @@
     width: 100vw;
     opacity: 0;
     pointer-events: none;
-    transition: opacity 0.5s;
+    transition: opacity 0.5s ease-in-out;
+    position: absolute;
+    top: 0;
+    left: 0;
   }
 
   .page.active {
@@ -134,12 +181,14 @@
     position: relative;
     width: 95%;
     margin: 0 auto;
-    min-height: 100vh;
+    height: 100vh;
     margin-left: 40px;
     display: flex;
     flex-direction: column;
-    justify-content: center;
+    justify-content: flex-start;
     align-items: left;
+    padding-top: 80px; /* Space for the close button */
+    overflow: hidden;
   }
 
   #greeting {
@@ -204,11 +253,12 @@
   }
 
   .close {
-    position: absolute;
+    position: fixed;
     top: 0;
     left: 0;
     margin-left: 40px;
     margin-top: 40px;
+    z-index: 10;
   }
 
   .back-btn {
@@ -221,43 +271,149 @@
   }
 
   #result-text {
-    max-height: 80vh;
+    flex: 1;
+    width: 100%;
+    height: calc(100vh - 80px);
     overflow-y: auto;
-    padding: 0.5rem;
+    padding: 2rem;
     font-size: 2rem;
-    white-space: pre-wrap;
     line-height: 1.6;
+    color: #000;
+    position: relative;
   }
 
-  #loading-overlay {
-    position: fixed;
-    top: 0;
+  #result-text::-webkit-scrollbar {
+    width: 8px;
+  }
+
+  #result-text::-webkit-scrollbar-track {
+    background: #fff8e7;
+  }
+
+  #result-text::-webkit-scrollbar-thumb {
+    background: #000;
+    border-radius: 4px;
+  }
+
+  #result-text::-webkit-scrollbar-thumb:hover {
+    background: #333;
+  }
+
+  .final-response {
+    width: 100%;
+    max-width: 100%;
+  }
+
+  .final-response h1,
+  .final-response h2,
+  .final-response h3,
+  .final-response h4,
+  .final-response h5,
+  .final-response h6 {
+    margin-top: 2em;
+    margin-bottom: 1em;
+    font-weight: 700;
+  }
+
+  .final-response p {
+    margin-bottom: 1.5em;
+  }
+
+  .final-response ul,
+  .final-response ol {
+    margin-bottom: 1.5em;
+    padding-left: 2em;
+  }
+
+  .final-response li {
+    margin-bottom: 0.5em;
+  }
+
+  .final-response blockquote {
+    border-left: 4px solid #000;
+    padding-left: 1em;
+    margin: 1.5em 0;
+    font-style: italic;
+  }
+
+  .final-response code {
+    background: #000;
+    color: #fff8e7;
+    padding: 0.2em 0.4em;
+    border-radius: 3px;
+    font-family: 'Chivo Mono', monospace;
+  }
+
+  .final-response pre {
+    background: #000;
+    color: #fff8e7;
+    padding: 1em;
+    border-radius: 4px;
+    overflow-x: auto;
+    margin: 1.5em 0;
+  }
+
+  .final-response pre code {
+    background: none;
+    padding: 0;
+  }
+
+  .generation-indicator {
+    position: absolute;
+    bottom: 0;
     left: 0;
     width: 100%;
-    height: 100%;
-    background: #fff8e7;
     display: flex;
-    justify-content: center;
+    flex-direction: column;
     align-items: center;
-    z-index: 1000;
+    gap: 1rem;
+    z-index: 100;
+    background: linear-gradient(to bottom, rgba(255, 248, 231, 0.95) 0%, rgba(255, 248, 231, 0.8) 50%, rgba(255, 248, 231, 0) 100%);
+    padding: 2rem 1rem;
+    backdrop-filter: blur(5px);
   }
 
-  .loader-content {
-    text-align: center;
+  .dots {
+    display: flex;
+    gap: 0.5rem;
   }
 
-  .loader {
-    width: 50px;
-    height: 50px;
-    border: 2px solid #00000020;
+  .dots span {
+    width: 8px;
+    height: 8px;
+    background: #000;
     border-radius: 50%;
-    border-top-color: #000;
-    margin: 0 auto;
-    animation: spin 1s ease-in-out infinite;
+    display: inline-block;
+    animation: bounce 1.4s infinite ease-in-out both;
   }
 
-  @keyframes spin {
-    to { transform: rotate(360deg); }
+  .dots span:nth-child(1) {
+    animation-delay: -0.32s;
+  }
+
+  .dots span:nth-child(2) {
+    animation-delay: -0.16s;
+  }
+
+  .status-text {
+    font-family: 'Onest', sans-serif;
+    font-size: 1.2rem;
+    color: #000;
+    opacity: 0.8;
+    text-align: center;
+    max-width: 600px;
+    line-height: 1.4;
+  }
+
+  @keyframes bounce {
+    0%, 80%, 100% { 
+      transform: scale(0);
+      opacity: 0.3;
+    }
+    40% { 
+      transform: scale(1);
+      opacity: 1;
+    }
   }
 
   /* Mobile responsiveness */
@@ -266,6 +422,7 @@
       margin-left: 20px;
       margin-right: 20px;
       width: auto;
+      padding-top: 60px;
     }
 
     #prompt-input {
@@ -277,7 +434,9 @@
     }
 
     #result-text {
+      height: calc(100vh - 60px);
       font-size: 1.5rem;
+      padding: 1rem;
     }
 
     #typing-tip {
@@ -289,6 +448,15 @@
     .close {
       margin-left: 20px;
       margin-top: 20px;
+    }
+
+    .generation-indicator {
+      padding: 1.5rem 1rem;
+    }
+    
+    .status-text {
+      font-size: 1rem;
+      max-width: 400px;
     }
   }
 
@@ -303,6 +471,16 @@
 
     #result-text {
       font-size: 1.2rem;
+      padding: 0.8rem;
+    }
+
+    .generation-indicator {
+      padding: 1rem 0.8rem;
+    }
+    
+    .status-text {
+      font-size: 0.9rem;
+      max-width: 300px;
     }
   }
 </style>

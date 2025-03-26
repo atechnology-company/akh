@@ -1,7 +1,7 @@
 {
 	"name": "akh",
 	"private": true,
-	"version": "0.0.1-experimental",
+	"version": "0.0.2-experimental",
 	"type": "module",
 	"scripts": {
 		"dev": "vite dev",
@@ -54,6 +54,7 @@
 		"autosize": "^6.0.1",
 		"dotenv": "^16.4.7",
 		"jquery": "^3.7.1",
+		"marked": "^15.0.7",
 		"nativescript": "^8.9.1"
 	}
 }

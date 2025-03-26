@@ -1,4 +1,18 @@
-import * as geolocation from '@nativescript/geolocation';
+const getCurrentLocation = () =>
+  new Promise<{ latitude: number; longitude: number }>((resolve, reject) => {
+    navigator.geolocation.getCurrentPosition(
+      (position) => resolve({
+        latitude: position.coords.latitude,
+        longitude: position.coords.longitude
+      }),
+      (error) => reject(error)
+    );
+  });
+
+const enableLocationRequest = async () => {
+  return Promise.resolve();
+};
+
 import type { PrayerTimes, AladhanResponse } from '../types';
 
 let prayerTimes: PrayerTimes = {
@@ -11,8 +25,8 @@ let prayerTimes: PrayerTimes = {
 
 export async function getPrayerTimes(): Promise<PrayerTimes | undefined> {
   try {
-    await geolocation.enableLocationRequest();
-    const location = await geolocation.getCurrentLocation({});
+    await enableLocationRequest();
+    const location = await getCurrentLocation();
     const lat = location.latitude;
     const lng = location.longitude;
     const date = new Date();

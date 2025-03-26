@@ -7,9 +7,15 @@ const port = 3000;
 
 // Middleware
 app.use(cors({
-    origin: ['http://127.0.0.1:5500', 'http://localhost:5500'],
-    methods: ['GET', 'POST']
+    origin: ['http://127.0.0.1:5500', 'http://localhost:5500', 'http://localhost:5173'],
+    methods: ['GET', 'POST', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization'],
+    credentials: true
 }));
+
+// Handle preflight requests
+app.options('*', cors());
+
 app.use(express.json());
 
 // Expanded list of allowed domains
@@ -18,6 +24,7 @@ const allowedDomains = [
     'islamweb.net',
     'en.wikipedia.org',
     'generativelanguage.googleapis.com',
+    'www.googleapis.com',
 ];
 
 // URL validation helper
