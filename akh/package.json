@@ -1,7 +1,7 @@
 {
 	"name": "akh",
 	"private": true,
-	"version": "0.0.2-experimental",
+	"version": "0.0.3-experimental",
 	"type": "module",
 	"scripts": {
 		"dev": "vite dev",

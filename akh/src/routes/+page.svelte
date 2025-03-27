@@ -1,6 +1,8 @@
 <script lang="ts">
     import { onMount } from 'svelte';
-    import { fade } from 'svelte/transition';
+    import { fade, fly, slide } from 'svelte/transition';
+    import { tweened } from 'svelte/motion';
+    import { cubicOut } from 'svelte/easing';
     import settings from '../components/settings.svelte';
     import qibla from '../components/qibla.svelte';
     import salah from '../components/salah.svelte';
@@ -10,17 +12,53 @@
     let pages = [settings, qibla, salah, mosques, alif];
     let pageNames = ['SETTINGS', 'QIBLA', 'SALAH', 'MOSQUES', 'ALIF'];
     let currentPageIndex = 2;
+    let previousPageIndex = 2;
+    let slideDirection = 1; // 1 = right, -1 = left
+    
+    // Store nav button elements and their positions
+    let navButtons: HTMLButtonElement[] = [];
+    let indicatorPosition = tweened({ left: 0, width: 0 }, {
+        duration: 300,
+        easing: cubicOut
+    });
+
+    // Update indicator position based on active button
+    function updateIndicatorPosition() {
+        if (navButtons[currentPageIndex]) {
+            const button = navButtons[currentPageIndex];
+            const rect = button.getBoundingClientRect();
+            const parentRect = button.parentElement!.getBoundingClientRect();
+            
+            indicatorPosition.set({
+                left: rect.left - parentRect.left,
+                width: rect.width
+            });
+        }
+    }
+    
+    onMount(() => {
+        updateIndicatorPosition();
+    });
 
     const setPage = (index: number) => {
+        slideDirection = index > currentPageIndex ? 1 : -1;
+        previousPageIndex = currentPageIndex;
         currentPageIndex = index;
+        updateIndicatorPosition();
     };
 
     const nextPage = () => {
+        slideDirection = 1;
+        previousPageIndex = currentPageIndex;
         currentPageIndex = (currentPageIndex + 1) % pages.length;
+        updateIndicatorPosition();
     };
 
     const prevPage = () => {
+        slideDirection = -1;
+        previousPageIndex = currentPageIndex;
         currentPageIndex = (currentPageIndex - 1 + pages.length) % pages.length;
+        updateIndicatorPosition();
     };
 
     let touchStartX = 0;
@@ -103,6 +141,7 @@
     .nav-section {
         display: flex;
         gap: 1rem;
+        position: relative;
     }
 
     .nav-button {
@@ -113,11 +152,22 @@
         color: white;
         font-family: 'Chivo Mono', monospace;
         font-size: 0.9rem;
+        opacity: 0.5;
+        transition: opacity 0.3s ease;
+        border-bottom: none;
     }
 
     .nav-button.active {
         font-weight: bold;
-        border-bottom: 2px solid white;
+        opacity: 1;
+    }
+    
+    .nav-indicator {
+        position: absolute;
+        bottom: -2px;
+        height: 2px;
+        background-color: white;
+        transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
     }
 
     .carousel {
@@ -157,6 +207,15 @@
     .carousel-content {
         width: 100%;
         height: 100%;
+        position: relative;
+    }
+
+    .full {
+        width: 100%;
+        height: 100%;
+        position: absolute;
+        top: 0;
+        left: 0;
     }
 </style>
 
@@ -174,10 +233,14 @@
             <button 
                 class="nav-button {currentPageIndex === i ? 'active' : ''}"
                 on:click={() => setPage(i)}
+                bind:this={navButtons[i]}
             >
                 {name}
             </button>
         {/each}
+        {#if $indicatorPosition}
+            <div class="nav-indicator" style="left: {$indicatorPosition.left}px; width: {$indicatorPosition.width}px;"></div>
+        {/if}
     </div>
 </div>
 
@@ -185,10 +248,22 @@
     on:touchstart={handleTouchStart} 
     on:touchend={handleTouchEnd}>
     <div class="carousel-content">
-        {#if pages[currentPageIndex]}
-            <div in:fade={{ duration: 300, delay: 100 }} out:fade={{ duration: 300 }}>
+        {#key currentPageIndex}
+            <div class="full" 
+                in:fly={{ 
+                    x: slideDirection * 500, 
+                    duration: 300, 
+                    opacity: 0,
+                    easing: cubicOut
+                }}
+                out:fly={{ 
+                    x: -slideDirection * 500, 
+                    duration: 300, 
+                    opacity: 0,
+                    easing: cubicOut
+                }}>
                 <svelte:component this={pages[currentPageIndex]} />
             </div>
-        {/if}
+        {/key}
     </div>
 </div>

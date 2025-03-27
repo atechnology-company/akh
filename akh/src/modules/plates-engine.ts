@@ -36,7 +36,7 @@ export async function initializePipeline() {
         console.log('Initializing summarizer model');
         summarizer = await pipeline(
             "summarization",
-            "Xenova/distilbart-cnn-6-6", // Smaller BART model
+            "ahmedaeb/distilbart-cnn-6-6-optimised", // Smaller BART model
             { 
                 dtype: "fp32",
                 device: "webgpu"
@@ -54,12 +54,28 @@ if (typeof window !== 'undefined') {
     initializePipeline();
 }
 
+// Function to detect if text is Arabic
+function isArabic(text: string): boolean {
+    const arabicRegex = /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]/;
+    return arabicRegex.test(text);
+}
+
 // Summarize content function 
 async function summarizeContent(content: string, quotes: Array<Quote>): Promise<string> {
     try {
         if (!content || typeof content !== 'string') {
             console.error('Invalid content received:', content);
             return '';
+        }
+
+        // Skip summarization for Arabic text
+        if (isArabic(content)) {
+            console.log('Arabic text detected, skipping summarization');
+            if (quotes?.length > 0) {
+                return content + '\n\nRelevant Quotes:\n' + 
+                    quotes.map(q => `"${q.text}" [${q.source}]`).join('\n');
+            }
+            return content;
         }
 
         // Clean and normalize content
@@ -110,7 +126,7 @@ async function summarizeContent(content: string, quotes: Array<Quote>): Promise<
 // Optimize search queries
 async function optimizeQuery(query: string, definitionMode = false) {
     const optimizationPrompt = definitionMode ? 
-        `Task: Generate 2 focused search queries to understand exactly what "${query}" is.
+        `Task: If you don't know something generate 2 focused search queries to understand exactly what "${query}" is.
         Rules:
         1. STRICTLY relate to understanding what "${query}" is
         2. NO examples - focus only on the query provided
@@ -120,12 +136,13 @@ async function optimizeQuery(query: string, definitionMode = false) {
 
         Format: Write ONLY the queries, one per line starting with "-"
         ` :
-        `Task: Generate THREE focused search queries about: "${query}"
+        `Task: Generate FIVE focused search queries about: "${query}"
         Rules:
-        1. STRICTLY relate to "${query}" - do not add unrelated topics
-        2. NO examples - focus only on the query provided
-        3. Keep all key terms from the original query
-        4. DO NOT change the topic or add assumptions
+        1. NO examples - focus only on the query provided
+        2. Keep all key terms from the original query
+        3. DO NOT change the topic or add assumptions
+        4. Feel free to break down the query into smaller queries
+        5. Use Arabic to search
 
         Format: Write ONLY the queries, one per line starting with "-"
         `;
@@ -140,7 +157,7 @@ async function optimizeQuery(query: string, definitionMode = false) {
             .filter((line: string) => line.trim().startsWith('-'))
             .map((line: string) => line.trim().substring(2).trim())
             .filter((query: string) => query.length > 0 && !query.includes('Example'))
-            .slice(0, 3); // Get only 3 optimized queries
+            .slice(1, 5); // Get only 3 optimized queries
 
         // Return max 5 queries total including original
         return Array.from(new Set([query, ...queries])).slice(0, 5);
@@ -479,17 +496,10 @@ Sources:
 ${webContext}
 
 Output Format:
-1. Key Points:
-- List main points
-- Include source references
+1. Key point in English with digestible explanation
+2. evidence from sources, no need for links, just the book or scholar and the content.
 
-2. Scholarly Views:
-- Present different positions
-- Include attributions
-
-3. Evidence:
-- Direct quotes
-- Citations
+Use markdown formatting.
 
 Begin Summary:`;
         
