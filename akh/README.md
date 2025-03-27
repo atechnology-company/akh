@@ -25,6 +25,28 @@ npm run dev
 npm run dev -- --open
 ```
 
+## Setting up Google Maps API Key for Qibla Direction Finder
+
+The Qibla Direction Finder component requires a Google Maps API key to function properly. Follow these steps to set it up:
+
+1. Go to the [Google Cloud Console](https://console.cloud.google.com/)
+2. Create a new project (or select an existing one)
+3. Enable the "Maps JavaScript API" for your project
+4. Create an API key
+5. Copy the `.env.example` file to `.env` and replace the placeholder with your API key:
+
+```bash
+cp .env.example .env
+```
+
+Then edit the `.env` file and replace `your_google_maps_api_key_here` with your actual API key:
+
+```
+VITE_GOOGLE_MAPS_API_KEY=your_actual_api_key_here
+```
+
+The Qibla component will now be able to load the Google Maps API and display the direction to the Kaaba from your current location.
+
 ## Building
 
 To create a production version of your app:

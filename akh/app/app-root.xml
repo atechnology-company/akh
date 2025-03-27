@@ -1,0 +1,6 @@
+<Page>
+    <ActionBar title="AKH Mobile" />
+    <StackLayout>
+        <WebView id="webview" src="{{ webViewUrl }}" height="100%" />
+    </StackLayout>
+</Page> 

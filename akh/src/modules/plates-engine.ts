@@ -7,7 +7,7 @@ import type {
     GeminiResponse, 
     Tokenizer, 
     CallbackFunction 
-} from '../types';
+} from '../types/index';
 
 // Get environment variables from window.__ENV__ or use empty strings as fallback
 const config: Config = {

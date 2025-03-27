@@ -36,7 +36,7 @@ const enableLocationRequest = async () => {
   return Promise.resolve();
 };
 
-import type { AladhanResponse } from '../types';
+import type { AladhanResponse } from '../types/index';
 
 export interface PrayerTimes {
   fajr: string;

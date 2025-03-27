@@ -3,14 +3,13 @@
     import { fade, fly, slide } from 'svelte/transition';
     import { tweened } from 'svelte/motion';
     import { cubicOut } from 'svelte/easing';
-    import settings from '../components/settings.svelte';
+    import about from '../components/about.svelte';
     import qibla from '../components/qibla.svelte';
     import salah from '../components/salah.svelte';
-    import mosques from '../components/mosques.svelte';
     import alif from '../components/alif.svelte';
 
-    let pages = [settings, qibla, salah, mosques, alif];
-    let pageNames = ['SETTINGS', 'QIBLA', 'SALAH', 'MOSQUES', 'ALIF'];
+    let pages = [about, qibla, salah, alif];
+    let pageNames = ['ABOUT', 'QIBLA', 'SALAH', 'ALIF'];
     let currentPageIndex = 2;
     let previousPageIndex = 2;
     let slideDirection = 1; // 1 = right, -1 = left
@@ -21,6 +20,15 @@
         duration: 300,
         easing: cubicOut
     });
+
+    // First visit detection for swipe hints
+    let isFirstVisit = false;
+    let isMobile = false;
+    
+    // For app switcher effect when swiping
+    let isSwiping = false;
+    let swipeProgress = 0;
+    let swipeTarget = 0;
 
     // Update indicator position based on active button
     function updateIndicatorPosition() {
@@ -36,6 +44,10 @@
         }
     }
     
+    function checkMobile() {
+        isMobile = window.innerWidth <= 768;
+    }
+    
     onMount(() => {
         // Load saved page from localStorage on mount
         const savedPage = localStorage.getItem('akhLastPage');
@@ -44,6 +56,19 @@
             previousPageIndex = currentPageIndex;
         }
         updateIndicatorPosition();
+        
+        // Check if first visit
+        isFirstVisit = localStorage.getItem('akhFirstVisit') !== 'false';
+        if (isFirstVisit) {
+            localStorage.setItem('akhFirstVisit', 'false');
+        }
+        
+        checkMobile();
+        window.addEventListener('resize', checkMobile);
+        
+        return () => {
+            window.removeEventListener('resize', checkMobile);
+        };
     });
 
     const setPage = (index: number) => {
@@ -75,14 +100,42 @@
 
     let touchStartX = 0;
     let touchEndX = 0;
+    let touchStartTime = 0;
 
     const handleTouchStart = (e: TouchEvent) => {
         touchStartX = e.touches[0].clientX;
+        touchStartTime = Date.now();
+        if (isMobile) {
+            isSwiping = true;
+            swipeProgress = 0;
+        }
+    };
+    
+    const handleTouchMove = (e: TouchEvent) => {
+        if (isMobile && isSwiping) {
+            const currentX = e.touches[0].clientX;
+            const deltaX = currentX - touchStartX;
+            
+            // Calculate swipe progress as percentage of screen width
+            swipeProgress = Math.min(Math.max(deltaX / window.innerWidth, -0.5), 0.5);
+            
+            // Determine swipe target based on direction
+            if (swipeProgress > 0.1) {
+                // Swiping right (prev)
+                swipeTarget = (currentPageIndex - 1 + pages.length) % pages.length;
+            } else if (swipeProgress < -0.1) {
+                // Swiping left (next)
+                swipeTarget = (currentPageIndex + 1) % pages.length;
+            } else {
+                swipeTarget = currentPageIndex;
+            }
+        }
     };
 
     const handleTouchEnd = (e: TouchEvent) => {
         touchEndX = e.changedTouches[0].clientX;
         const swipeDistance = touchEndX - touchStartX;
+        const swipeTime = Date.now() - touchStartTime;
         
         if (Math.abs(swipeDistance) > 50) { // minimum swipe distance
             if (swipeDistance > 0) {
@@ -90,6 +143,11 @@
             } else {
                 nextPage();
             }
+        }
+        
+        if (isMobile) {
+            isSwiping = false;
+            swipeProgress = 0;
         }
     };
 
@@ -232,6 +290,171 @@
         overflow: hidden;
         transform: translateZ(0); /* Force GPU acceleration */
     }
+    
+    /* Swipe indicator styles - similar to salah.svelte */
+    .swipe-indicator {
+        position: absolute;
+        width: 50px;
+        height: 50px;
+        top: 50%;
+        opacity: 0.8;
+        z-index: 1000;
+        pointer-events: none;
+        animation: pulse 2s infinite ease-in-out;
+    }
+    
+    .swipe-indicator.left {
+        left: 20px;
+        animation: bounceLeft 2s infinite ease-in-out;
+    }
+    
+    .swipe-indicator.right {
+        right: 20px;
+        animation: bounceRight 2s infinite ease-in-out;
+    }
+    
+    .swipe-indicator .arrow {
+        width: 15px;
+        height: 15px;
+        border-right: 3px solid white;
+        border-bottom: 3px solid white;
+        display: block;
+        position: absolute;
+        left: 50%;
+        top: 50%;
+        filter: drop-shadow(0 0 3px rgba(255, 255, 255, 0.7));
+    }
+    
+    .swipe-indicator.left .arrow {
+        transform: translate(-25%, -50%) rotate(135deg); /* Point left */
+    }
+    
+    .swipe-indicator.right .arrow {
+        transform: translate(-75%, -50%) rotate(-45deg); /* Point right */
+    }
+    
+    /* Add a hint text next to the arrows */
+    .swipe-indicator::after {
+        content: attr(data-hint);
+        position: absolute;
+        color: white;
+        font-size: 0.8rem;
+        opacity: 0.9;
+        white-space: nowrap;
+        text-shadow: 0 0 5px rgba(0, 0, 0, 0.8);
+    }
+    
+    .swipe-indicator.left::after {
+        content: "Previous"; 
+        left: 40px;
+        top: 50%;
+        transform: translateY(-50%);
+    }
+    
+    .swipe-indicator.right::after {
+        content: "Next";
+        right: 40px;
+        top: 50%;
+        transform: translateY(-50%);
+    }
+    
+    @keyframes bounceLeft {
+        0%, 100% {
+            transform: translateX(0);
+            opacity: 0.7;
+        }
+        50% {
+            transform: translateX(-5px);
+            opacity: 1;
+        }
+    }
+    
+    @keyframes bounceRight {
+        0%, 100% {
+            transform: translateX(0);
+            opacity: 0.7;
+        }
+        50% {
+            transform: translateX(5px);
+            opacity: 1;
+        }
+    }
+    
+    @keyframes pulse {
+        0%, 100% {
+            opacity: 0.4;
+            transform: scale(0.95);
+        }
+        50% {
+            opacity: 0.8;
+            transform: scale(1.05);
+        }
+    }
+    
+    /* App switcher styles for mobile */
+    .app-switcher {
+        position: absolute;
+        bottom: 10px;
+        left: 0;
+        width: 100%;
+        height: 60px;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        background: linear-gradient(to bottom, rgba(0, 0, 0, 0), rgba(0, 0, 0, 0.5));
+        z-index: 10;
+        opacity: 0;
+        transition: opacity 0.3s ease;
+    }
+    
+    .app-switcher.swiping {
+        opacity: 1;
+    }
+    
+    .app-switcher-items {
+        display: flex;
+        gap: 30px;
+        height: 100%;
+        align-items: center;
+    }
+    
+    .app-switcher-item {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        transition: transform 0.3s ease, opacity 0.3s ease;
+        opacity: 0.5;
+    }
+    
+    .app-switcher-item.active {
+        opacity: 1;
+        transform: scale(1.2);
+    }
+    
+    .app-switcher-item.target {
+        opacity: 0.8;
+        transform: scale(1.1);
+    }
+    
+    .app-switcher-label {
+        font-family: 'Chivo Mono', monospace;
+        font-size: 0.8rem;
+        margin-top: 5px;
+        display: block;
+    }
+    
+    .page-indicator {
+        width: 50px;
+        height: 4px;
+        background: white;
+        border-radius: 2px;
+    }
+    
+    /* Scale the current page when swiping */
+    .swiping-active .full {
+        transition: transform 0.3s ease;
+        transform: scale(0.85) translateZ(0);
+    }
 </style>
 
 <div class="header-trigger"
@@ -262,8 +485,9 @@
     </div>
 </div>
 
-<div class="carousel {isHeaderVisible ? 'header-visible' : ''}" 
+<div class="carousel {isHeaderVisible ? 'header-visible' : ''} {isSwiping ? 'swiping-active' : ''}" 
     on:touchstart={handleTouchStart} 
+    on:touchmove={handleTouchMove}
     on:touchend={handleTouchEnd}>
     <div class="carousel-content">
         {#key currentPageIndex}
@@ -280,9 +504,31 @@
                     opacity: 0,
                     easing: cubicOut
                 }}
-                style="will-change: transform, opacity;">
+                style="will-change: transform, opacity; transform: scale({isSwiping ? 0.85 : 1}) translateZ(0) translateX({isSwiping ? swipeProgress * 100 : 0}px);">
                 <svelte:component this={pages[currentPageIndex]} />
             </div>
         {/key}
     </div>
+    
+    {#if isMobile && isFirstVisit}
+        <div class="swipe-indicator left" data-hint="Previous">
+            <div class="arrow"></div>
+        </div>
+        <div class="swipe-indicator right" data-hint="Next">
+            <div class="arrow"></div>
+        </div>
+    {/if}
+    
+    {#if isMobile}
+        <div class="app-switcher {isSwiping ? 'swiping' : ''}">
+            <div class="app-switcher-items">
+                {#each pageNames as name, i}
+                    <div class="app-switcher-item {i === currentPageIndex ? 'active' : ''} {i === swipeTarget && isSwiping ? 'target' : ''}">
+                        <div class="page-indicator"></div>
+                        <div class="app-switcher-label">{name}</div>
+                    </div>
+                {/each}
+            </div>
+        </div>
+    {/if}
 </div>

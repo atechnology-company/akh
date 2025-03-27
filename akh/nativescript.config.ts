@@ -7,5 +7,6 @@ export default {
   android: {
     v8Flags: '--expose_gc',
     markingMode: 'none'
-  }
+  },
+  webpackConfigPath: 'webpack.config.cjs'
 } as NativeScriptConfig;

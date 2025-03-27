@@ -10,6 +10,52 @@
         isha: ''
     };
     
+    function calculateMidnight(isha: string, fajr: string): string {
+        const timeToMinutes = (timeStr: string) => {
+            if (!timeStr) return 0;
+            const [hours, minutes] = timeStr.split(':').map(Number);
+            return hours * 60 + minutes;
+        };
+
+        const ishaMinutes = timeToMinutes(isha);
+        const fajrMinutes = timeToMinutes(fajr);
+        
+        // If fajr is next day
+        let totalNightMinutes = fajrMinutes - ishaMinutes;
+        if (totalNightMinutes < 0) {
+            totalNightMinutes += 24 * 60; // Add 24 hours
+        }
+        
+        const midnightMinutes = ishaMinutes + (totalNightMinutes / 2);
+        const midnightHours = Math.floor(midnightMinutes / 60) % 24;
+        const midnightMins = Math.floor(midnightMinutes % 60);
+        
+        return `${midnightHours.toString().padStart(2, '0')}:${midnightMins.toString().padStart(2, '0')}`;
+    }
+
+    function calculateFirstThird(isha: string, fajr: string): string {
+        const timeToMinutes = (timeStr: string) => {
+            if (!timeStr) return 0;
+            const [hours, minutes] = timeStr.split(':').map(Number);
+            return hours * 60 + minutes;
+        };
+
+        const ishaMinutes = timeToMinutes(isha);
+        const fajrMinutes = timeToMinutes(fajr);
+        
+        // If fajr is next day
+        let totalNightMinutes = fajrMinutes - ishaMinutes;
+        if (totalNightMinutes < 0) {
+            totalNightMinutes += 24 * 60; // Add 24 hours
+        }
+        
+        const firstThirdMinutes = ishaMinutes + (totalNightMinutes / 3);
+        const firstThirdHours = Math.floor(firstThirdMinutes / 60) % 24;
+        const firstThirdMins = Math.floor(firstThirdMinutes % 60);
+        
+        return `${firstThirdHours.toString().padStart(2, '0')}:${firstThirdMins.toString().padStart(2, '0')}`;
+    }
+    
     let currentPrayer: keyof typeof prayerTimes = 'fajr';
     let nextPrayer: keyof typeof prayerTimes = 'dhuhr';
     let passedPrayers: string[] = [];
@@ -24,8 +70,12 @@
     let isInitialLoad = true;
     let fadeState = "visible"; // "visible", "hidden", "fading-in", "fading-out"
     let showScrollNote = false;
+    let isMobile = false;
+    let startY = 0;
+    let touchTimeout: NodeJS.Timeout;
+    let isFirstVisit = true; // Track whether this is the first visit
 
-    $: showScrollNote = !isFullscreen;
+    $: showScrollNote = !isFullscreen && !isMobile;
 
     // Get bezels from parent component
     let containerHeight = '100%';
@@ -126,36 +176,74 @@
         });
     }
 
+    function checkMobile() {
+        isMobile = window.innerWidth <= 768;
+    }
+    
+    function handleTouchStart(event: TouchEvent) {
+        if (isTransitioning) return;
+        startY = event.touches[0].clientY;
+    }
+    
+    function handleTouchMove(event: TouchEvent) {
+        if (isTransitioning) return;
+        
+        const currentY = event.touches[0].clientY;
+        const diffY = startY - currentY;
+        
+        // If swipe up is significant enough (> 50px)
+        if (Math.abs(diffY) > 50) {
+            clearTimeout(touchTimeout);
+            touchTimeout = setTimeout(() => {
+                if (diffY > 0) {
+                    // Swipe up - show fullscreen
+                    toggleFullscreen();
+                } else {
+                    // Swipe down - show compact view
+                    if (isFullscreen) {
+                        toggleFullscreen();
+                    }
+                }
+            }, 50);
+        }
+    }
+    
+    function toggleFullscreen() {
+        if (isTransitioning) return;
+        
+        isTransitioning = true;
+        
+        // Step 1: Fade out completely
+        fadeState = "fading-out";
+        
+        // Step 2: Wait for fade out to complete, then reposition
+        setTimeout(() => {
+            fadeState = "hidden";
+            
+            // Switch layout mode immediately after elements are hidden
+            setTimeout(() => {
+                isFullscreen = !isFullscreen;
+                
+                // Step 3: Begin fade in after layout change is complete
+                setTimeout(() => {
+                    fadeState = "fading-in";
+                    
+                    // Step 4: Complete
+                    setTimeout(() => {
+                        fadeState = "visible";
+                        isTransitioning = false;
+                    }, 400);
+                }, 50);
+            }, 50);
+        }, 400); // Wait for fade out to complete
+    }
+    
     function handleScroll(event: WheelEvent) {
         if (isTransitioning) return;
         
         clearTimeout(scrollTimeout);
         scrollTimeout = setTimeout(() => {
-            isTransitioning = true;
-            
-            // Step 1: Fade out completely
-            fadeState = "fading-out";
-            
-            // Step 2: Wait for fade out to complete, then reposition
-            setTimeout(() => {
-                fadeState = "hidden";
-                
-                // Switch layout mode immediately after elements are hidden
-                setTimeout(() => {
-                    isFullscreen = !isFullscreen;
-                    
-                    // Step 3: Begin fade in after layout change is complete
-                    setTimeout(() => {
-                        fadeState = "fading-in";
-                        
-                        // Step 4: Complete
-                        setTimeout(() => {
-                            fadeState = "visible";
-                            isTransitioning = false;
-                        }, 400);
-                    }, 50);
-                }, 50);
-            }, 400); // Wait for fade out to complete
+            toggleFullscreen();
         }, 50);
     }
 
@@ -186,10 +274,26 @@
 
     onMount(() => {
         initializePrayerTimes();
+        checkMobile();
+        
+        // Check if user has visited before
+        if (localStorage.getItem('salahComponentVisited') === 'true') {
+            isFirstVisit = false;
+        } else {
+            // Set flag for next time
+            localStorage.setItem('salahComponentVisited', 'true');
+        }
         
         window.addEventListener('wheel', handleScroll);
+        window.addEventListener('resize', checkMobile);
+        window.addEventListener('touchstart', handleTouchStart, { passive: true });
+        window.addEventListener('touchmove', handleTouchMove, { passive: true });
+        
         return () => {
             window.removeEventListener('wheel', handleScroll);
+            window.removeEventListener('resize', checkMobile);
+            window.removeEventListener('touchstart', handleTouchStart);
+            window.removeEventListener('touchmove', handleTouchMove);
         };
     });
 </script>
@@ -198,17 +302,21 @@
     class:fade-out={fadeState === "fading-out"} 
     class:hidden={fadeState === "hidden"} 
     class:fade-in={fadeState === "fading-in"} 
-    class:visible={fadeState === "visible"}>
+    class:visible={fadeState === "visible"}
+    class:mobile={isMobile}>
     {#if !isFullscreen}
     <div class="current-prayer" class:hidden={isFullscreen} data-prayer={currentPrayer}>
         {#if isLoading}
-            <div class="loading">
-                <p>Loading prayer times</p>
-                <div class="loading-animation">
-                    <div class="loading-dot"></div>
-                    <div class="loading-dot"></div>
-                    <div class="loading-dot"></div>
+            <div class="generation-indicator">
+                <div class="galaxy-loader">
+                <div class="crescent-moon"></div>
+                <div class="star star-1"></div>
+                <div class="star star-2"></div>
+                <div class="star star-3"></div>
+                <div class="star star-4"></div>
+                <div class="star star-5"></div>
                 </div>
+                <div class="status-text">loading prayer times</div>
             </div>
         {:else if error}
             <div class="error">
@@ -239,13 +347,16 @@
     <div class="prayer-list" class:fullscreen={isFullscreen}>
         <div class="prayer-list-overlay"></div>
         {#if isLoading}
-            <div class="loading">
-                <p>Loading prayer times</p>
-                <div class="loading-animation">
-                    <div class="loading-dot"></div>
-                    <div class="loading-dot"></div>
-                    <div class="loading-dot"></div>
+            <div class="generation-indicator">
+                <div class="galaxy-loader">
+                <div class="crescent-moon"></div>
+                <div class="star star-1"></div>
+                <div class="star star-2"></div>
+                <div class="star star-3"></div>
+                <div class="star star-4"></div>
+                <div class="star star-5"></div>
                 </div>
+                <div class="status-text">loading prayer times</div>
             </div>
         {:else if error}
             <div class="error">
@@ -254,54 +365,109 @@
             </div>
         {:else}
             <div class="prayer-grid">
-                {#each Object.entries(prayerTimes)
-                    .filter(([prayer]) => {
-                        if (isFullscreen) return true;
-                        
-                        // Show only upcoming prayers (not current)
-                        const prayers = Object.entries(prayerTimes)
-                            .sort((a, b) => {
-                                const timeToMinutes = (timeStr: string) => {
-                                    if (!timeStr) return 0;
-                                    const [hours, minutes] = timeStr.split(':').map(Number);
-                                    return hours * 60 + minutes;
-                                };
-                                return timeToMinutes(a[1]) - timeToMinutes(b[1]);
-                            })
-                            .map(([p]) => p);
-                        
-                        const currentIndex = prayers.indexOf(currentPrayer);
-                        // Return prayers after current (not including current)
-                        return prayers.indexOf(prayer) > currentIndex;
-                    })
-                    .sort((a, b) => {
-                        // Always sort by prayer time
-                        const timeToMinutes = (timeStr: string) => {
-                            if (!timeStr) return 0;
-                            const [hours, minutes] = timeStr.split(':').map(Number);
-                            return hours * 60 + minutes;
-                        };
-                        return timeToMinutes(a[1]) - timeToMinutes(b[1]);
-                    }) as [prayer, time], i}
-                    <div 
-                        class="prayer-time" 
-                        class:fullscreen={isFullscreen}
-                        data-prayer={prayer}
-                        style="--index: {i}"
-                    >
+                {#if currentPrayer === 'isha' && !isFullscreen}
+                    <div class="prayer-time" data-prayer="midnight" style="--index: 0">
                         <div class="prayer-list-info">
-                            {#if !isFullscreen}
+                            {#if isMobile}
+                                <p class="prayer-name">midnight</p>
                                 <div class="time-display">
-                                    <p class="time">{time}</p>
+                                    <p class="time">{calculateMidnight(prayerTimes.isha, prayerTimes.fajr)}</p>
                                 </div>
-                                <p class="prayer-name">{prayer}</p>
                             {:else}
-                                <h2 class="prayer-name">{prayer}</h2>
-                                <p class="time">{time}</p>
+                                <div class="time-display">
+                                    <p class="time">{calculateMidnight(prayerTimes.isha, prayerTimes.fajr)}</p>
+                                </div>
+                                <p class="prayer-name">midnight</p>
                             {/if}
                         </div>
                     </div>
-                {/each}
+                    <div class="prayer-time" data-prayer="tahajjud" style="--index: 1">
+                        <div class="prayer-list-info">
+                            {#if isMobile}
+                                <p class="prayer-name">first third</p>
+                                <div class="time-display">
+                                    <p class="time">{calculateFirstThird(prayerTimes.isha, prayerTimes.fajr)}</p>
+                                </div>
+                            {:else}
+                                <div class="time-display">
+                                    <p class="time">{calculateFirstThird(prayerTimes.isha, prayerTimes.fajr)}</p>
+                                </div>
+                                <p class="prayer-name">first third</p>
+                            {/if}
+                        </div>
+                    </div>
+                    <div class="prayer-time" data-prayer="fajr" style="--index: 2">
+                        <div class="prayer-list-info">
+                            {#if isMobile}
+                                <p class="prayer-name">fajr</p>
+                                <div class="time-display">
+                                    <p class="time">{prayerTimes.fajr}</p>
+                                </div>
+                            {:else}
+                                <div class="time-display">
+                                    <p class="time">{prayerTimes.fajr}</p>
+                                </div>
+                                <p class="prayer-name">fajr</p>
+                            {/if}
+                        </div>
+                    </div>
+                {:else}
+                    {#each Object.entries(prayerTimes)
+                        .filter(([prayer]) => {
+                            if (isFullscreen) return true;
+                            
+                            // Show only upcoming prayers (not current)
+                            const prayers = Object.entries(prayerTimes)
+                                .sort((a, b) => {
+                                    const timeToMinutes = (timeStr: string) => {
+                                        if (!timeStr) return 0;
+                                        const [hours, minutes] = timeStr.split(':').map(Number);
+                                        return hours * 60 + minutes;
+                                    };
+                                    return timeToMinutes(a[1]) - timeToMinutes(b[1]);
+                                })
+                                .map(([p]) => p);
+                            
+                            const currentIndex = prayers.indexOf(currentPrayer);
+                            // Return prayers after current (not including current)
+                            return prayers.indexOf(prayer) > currentIndex;
+                        })
+                        .sort((a, b) => {
+                            // Always sort by prayer time
+                            const timeToMinutes = (timeStr: string) => {
+                                if (!timeStr) return 0;
+                                const [hours, minutes] = timeStr.split(':').map(Number);
+                                return hours * 60 + minutes;
+                            };
+                            return timeToMinutes(a[1]) - timeToMinutes(b[1]);
+                        }) as [prayer, time], i}
+                        <div 
+                            class="prayer-time" 
+                            class:fullscreen={isFullscreen}
+                            data-prayer={prayer}
+                            style="--index: {i}"
+                        >
+                            <div class="prayer-list-info">
+                                {#if !isFullscreen}
+                                    {#if isMobile}
+                                        <p class="prayer-name">{prayer}</p>
+                                        <div class="time-display">
+                                            <p class="time">{time}</p>
+                                        </div>
+                                    {:else}
+                                        <div class="time-display">
+                                            <p class="time">{time}</p>
+                                        </div>
+                                        <p class="prayer-name">{prayer}</p>
+                                    {/if}
+                                {:else}
+                                    <h2 class="prayer-name">{prayer}</h2>
+                                    <p class="time">{time}</p>
+                                {/if}
+                            </div>
+                        </div>
+                    {/each}
+                {/if}
             </div>
         {/if}
     </div>
@@ -310,10 +476,22 @@
             Scroll to see all prayer times
         </div>
     {/if}
-    {#if !showScrollNote}
+    {#if !showScrollNote && !isMobile}
         <div class="scroll-note" class:fade-in={!showScrollNote} class:fade-out={showScrollNote}>
             Scroll again to see the focused view
         </div>
+    {/if}
+    
+    {#if isMobile && isFirstVisit}
+        {#if !isFullscreen}
+            <div class="swipe-indicator up">
+                <div class="arrow"></div>
+            </div>
+        {:else}
+            <div class="swipe-indicator down">
+                <div class="arrow"></div>
+            </div>
+        {/if}
     {/if}
 </div>
 
@@ -336,6 +514,16 @@
         scrollbar-width: none;
         -ms-overflow-style: none;
         transform: translateZ(0); /* Force GPU acceleration */
+    }
+    
+    /* Mobile layout */
+    .layout.mobile {
+        grid-template-columns: 1fr;
+        grid-template-rows: 70% 30%;
+    }
+    
+    .layout.mobile.fullscreen {
+        grid-template-rows: 1fr;
     }
     
     .layout::-webkit-scrollbar {
@@ -397,6 +585,14 @@
         border-radius: 8px 0 0 8px;
     }
     
+    /* Mobile current prayer */
+    .layout.mobile .current-prayer {
+        border-radius: 8px 8px 0 0;
+        padding: 2rem;
+        max-height: none; /* Remove height limit */
+        height: 100%; /* Take full height of container */
+    }
+    
     /* Apply specific prayer backgrounds */
     .current-prayer[data-prayer="fajr"] {
         background: linear-gradient(135deg, #1a2a6c, #b21f1f, #fdbb2d);
@@ -433,12 +629,25 @@
         align-items: center;
         z-index: 1;
     }
-
+    
+    .layout.mobile .header {
+        position: relative;
+        top: 0;
+        left: 0;
+        right: 0;
+        margin-bottom: 1rem;
+    }
+    
     .hijri {
         font-size: 2rem;
         color: rgba(255, 255, 255, var(--text-opacity));
         margin: 0;
         font-weight: 300;
+    }
+    
+    .layout.mobile .hijri,
+    .layout.mobile .location {
+        font-size: 1.5rem;
     }
 
     .location {
@@ -455,6 +664,10 @@
         justify-content: center;
         padding-top: 2rem;
     }
+    
+    .layout.mobile .next-prayer {
+        padding-top: 0.5rem;
+    }
 
     .countdown {
         text-align: center;
@@ -467,6 +680,10 @@
         color: rgba(255, 255, 255, var(--text-opacity));
         margin: 0;
     }
+    
+    .layout.mobile .countdown .time {
+        font-size: 6rem;
+    }
 
     .countdown .subtitle {
         font-size: 2.5rem;
@@ -474,6 +691,10 @@
         margin: 1rem 0 0 0;
         font-weight: 300;
         text-transform: lowercase;
+    }
+    
+    .layout.mobile .countdown .subtitle {
+        font-size: 1.8rem;
     }
 
     .prayer-info {
@@ -485,13 +706,23 @@
         justify-content: space-between;
         align-items: baseline;
     }
+    
+    .layout.mobile .prayer-info {
+        position: relative;
+        bottom: auto;
+        left: auto;
+        right: auto;
+        margin-top: 1.5rem;
+    }
 
     .prayer-list-info {
-        position: absolute;
+        position: relative;
         display: flex;
         justify-content: space-between;
         align-items: baseline;
         z-index: 2;
+        height: 100%;
+        width: 100%;
     }
 
     .prayer-details {
@@ -530,7 +761,11 @@
         flex-direction: column;
         border-radius: 0 8px 8px 0;
         overflow: hidden;
-        transform: translateZ(0); /* Force GPU acceleration */
+        transform: translateZ(0);
+    }
+    
+    .layout.mobile .prayer-list {
+        border-radius: 0 0 8px 8px;
     }
     
     .prayer-list-overlay {
@@ -558,15 +793,54 @@
         overflow-x: hidden;
         position: relative;
         z-index: 2;
-        scrollbar-width: none; /* Firefox */
-        -ms-overflow-style: none; /* IE and Edge */
-        transform: translateZ(0); /* Force GPU acceleration */
+        scrollbar-width: none;
+        -ms-overflow-style: none;
+        transform: translateZ(0);
     }
-
+    
     .prayer-grid::-webkit-scrollbar {
         display: none; /* Hide scrollbar for Chrome, Safari and Opera */
     }
-
+    
+    /* Mobile prayer grid */
+    .layout.mobile .prayer-grid {
+        display: flex;
+        flex-direction: column;
+        align-items: center; /* Center prayer times */
+        width: 100%;
+        height: 100%; /* Take full height */
+    }
+    
+    .layout.mobile:not(.fullscreen) .prayer-grid {
+        max-height: none; /* Remove height limit */
+        height: 100%; /* Take full height of container */
+        overflow-y: auto;
+        width: 100%; /* Ensure full width */
+        padding: 0; /* Remove any padding */
+        display: flex;
+        flex-direction: column;
+    }
+    
+    .layout.mobile:not(.fullscreen) .prayer-time {
+        height: auto; /* Auto height */
+        flex: 1; /* Equal distribution of space */
+        min-height: 60px; /* Minimum height */
+        max-height: none; /* Remove max height */
+        flex-shrink: 0;
+        width: 100%; /* Ensure full width */
+        box-sizing: border-box; /* Include padding in width */
+    }
+    
+    .layout.mobile.fullscreen .prayer-time {
+        animation: mobileSlideIn 0.4s ease-out forwards;
+        animation-delay: calc(var(--index) * 0.08s);
+        width: 100%; /* Ensure full width */
+        margin: 0; /* No margins in fullscreen */
+        padding: 0; /* No padding in fullscreen */
+        height: 20%; /* Maintain height proportion */
+        min-height: 100px; /* Minimum height */
+    }
+    
     .prayer-list.fullscreen {
         width: 100%;
         padding: 0;
@@ -578,6 +852,7 @@
         flex-direction: column;
         gap: 0;
         padding: 0;
+        height: 100%;
     }
 
     .prayer-time {
@@ -587,6 +862,7 @@
     
     /* Fullscreen prayer time styles */
     .prayer-time.fullscreen {
+        flex: 1;
         height: 100%;
         animation: fadeSlideIn 0.5s ease-out forwards;
         animation-delay: calc(var(--index) * 0.1s);
@@ -600,18 +876,6 @@
         z-index: 10;
     }
     
-    /* Add subtle gradient overlays to improve contrast */
-    .prayer-time::after {
-        content: '';
-        position: absolute;
-        top: 0;
-        left: 0;
-        right: 0;
-        bottom: 0;
-        background: linear-gradient(rgba(0, 0, 0, 0.2), rgba(0, 0, 0, 0));
-        pointer-events: none;
-    }
-
     /* Prayer time backgrounds */
     .prayer-time[data-prayer="fajr"] {
         background: linear-gradient(135deg, #1a2a6c, #b21f1f, #fdbb2d);
@@ -633,6 +897,14 @@
         background: linear-gradient(135deg, #0f2027, #203a43, #2c5364);
     }
 
+    .prayer-time[data-prayer="midnight"] {
+        background: linear-gradient(135deg, #222222, #000000, #505050);
+    }
+
+    .prayer-time[data-prayer="tahajjud"] {
+        background: linear-gradient(135deg, #0b122b, #3f0c41, #7a0270);
+    }
+
     .prayer-list .prayer-info, .prayer-list .prayer-list-info {
         position: relative;
         display: flex;
@@ -646,19 +918,30 @@
         flex-direction: column;
         justify-content: space-between;
         align-items: flex-start;
-        padding: 16px;
+        padding: 1rem;
         background-color: rgba(0, 0, 0, 0.5);
         backdrop-filter: blur(10px);
-        height: 100%;
+        height: auto;
         width: 100%;
+    }
+    
+    .layout.mobile .prayer-time:not(.fullscreen) .prayer-list-info {
+        flex-direction: row;
+        align-items: center;
+        justify-content: space-between;
+        padding: 0.75rem 1.25rem; /* More horizontal padding */
+        width: 100%;
+        box-sizing: border-box;
     }
     
     .prayer-time.fullscreen .prayer-info, .prayer-list.fullscreen .prayer-list-info {
         flex-direction: row;
         justify-content: space-between;
         align-items: center;
-        padding: 3rem 4rem;
+        padding: 1.5rem 1.5rem;
         background-color: rgba(0, 0, 0, 0);
+        height: 100%;
+        width: 100%;
     }
     
     .time-display {
@@ -670,6 +953,12 @@
         align-items: center;
         justify-content: center;
         position: relative;
+    }
+    
+    .layout.mobile .prayer-time:not(.fullscreen) .time-display {
+        margin-bottom: 0;
+        width: auto;
+        justify-content: flex-end; /* Align to right */
     }
 
     .prayer-name {
@@ -684,11 +973,17 @@
         left: 16px;
     }
     
+    .layout.mobile .prayer-time:not(.fullscreen) .prayer-name {
+        position: static;
+        font-size: 1.5rem;
+        text-align: left;
+    }
+    
     .prayer-time.fullscreen .prayer-name {
         font-size: 2.5rem;
         position: static;
     }
-
+    
     .prayer-time .time {
         font-size: 3rem;
         font-weight: 200;
@@ -696,57 +991,149 @@
         margin: 0;
     }
     
+    .layout.mobile .prayer-time:not(.fullscreen) .time {
+        font-size: 1.5rem;
+        text-align: right;
+    }
+    
     .prayer-time:not(.fullscreen) .time {
         font-size: 8rem;
         line-height: 1;
     }
+    
+    .layout.mobile .current-prayer .prayer-details {
+        width: 100%; /* Full width */
+        display: flex;
+        flex-direction: row; /* Horizontal layout */
+        justify-content: space-between; /* Space between name and time */
+        align-items: center;
+        background-color: rgba(0, 0, 0, 0.15);
+        padding: 1.5rem 2rem;
+        border-radius: 1rem;
+        backdrop-filter: blur(10px);
+    }
+    
+    .layout.mobile .current-prayer .prayer-details h2 {
+        font-size: 2rem;
+        font-weight: 300;
+        margin: 0;
+    }
+    
+    .layout.mobile .current-prayer .prayer-details .time {
+        font-size: 2.5rem;
+        font-weight: 200;
+        margin: 0;
+        line-height: 1;
+    }
 
-    .loading {
+    .generation-indicator {
         display: flex;
         flex-direction: column;
         justify-content: center;
         align-items: center;
         height: 100%;
-        color: rgba(255, 255, 255, 0.7);
-        font-size: 2rem;
-        font-weight: 300;
-        gap: 2rem;
+        width: 100%;
         position: relative;
         z-index: 2;
     }
-    
-    /* Pulsing dots loading animation */
-    .loading-animation {
+
+    .galaxy-loader {
+        position: relative;
+        width: 100px;
+        height: 100px;
         display: flex;
-        gap: 1rem;
+        justify-content: center;
+        align-items: center;
+        animation: galaxy-rotate 12s infinite linear;
+        margin: 0 auto;
     }
-    
-    .loading-dot {
-        width: 1.2rem;
-        height: 1.2rem;
+
+    .crescent-moon {
+        position: absolute;
+        width: 60px;
+        height: 60px;
         border-radius: 50%;
-        background-color: white;
-        animation: pulse 1.5s infinite ease-in-out;
+        background: transparent;
+        box-shadow: 15px 15px 0 0 #ffffff;
+        animation: moon-pulse 3s infinite ease-in-out;
+        transform-origin: 25% 25%;
     }
-    
-    .loading-dot:nth-child(2) {
-        animation-delay: 0.2s;
+
+    .star {
+        position: absolute;
+        background-color: #ffffff;
+        clip-path: polygon(50% 0%, 61% 35%, 98% 35%, 68% 57%, 79% 91%, 50% 70%, 21% 91%, 32% 57%, 2% 35%, 39% 35%);
+        opacity: 0.8;
+        animation: twinkle 3s infinite ease-in-out;
     }
-    
-    .loading-dot:nth-child(3) {
-        animation-delay: 0.4s;
+
+    .star-1 {
+        width: 12px;
+        height: 12px;
+        top: 10px;
+        left: 50%;
+        animation-delay: 0s;
     }
-    
-    @keyframes pulse {
+
+    .star-2 {
+        width: 10px;
+        height: 10px;
+        top: 50%;
+        right: 10px;
+        animation-delay: 0.3s;
+    }
+
+    .star-3 {
+        width: 14px;
+        height: 14px;
+        bottom: 10px;
+        left: 50%;
+        animation-delay: 0.6s;
+    }
+
+    .star-4 {
+        width: 8px;
+        height: 8px;
+        top: 50%;
+        left: 10px;
+        animation-delay: 0.9s;
+    }
+
+    .star-5 {
+        width: 16px;
+        height: 16px;
+        top: 30px;
+        right: 30px;
+        animation-delay: 1.2s;
+    }
+
+    @keyframes galaxy-rotate {
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
+    }
+
+    @keyframes moon-pulse {
         0%, 100% { 
-            transform: scale(0.5);
-            opacity: 0.5;
+        transform: scale(0.9);
+        opacity: 0.85;
         }
         50% { 
-            transform: scale(1);
-            opacity: 1;
+        transform: scale(1.1);
+        opacity: 1;
         }
     }
+
+    @keyframes twinkle {
+        0%, 100% { 
+        transform: scale(0.5);
+        opacity: 0.5;
+        }
+        50% { 
+        transform: scale(1.3);
+        opacity: 1;
+        }
+    }
+
 
     .error {
         display: flex;
@@ -797,6 +1184,11 @@
         opacity: 1;
         z-index: 1000;
     }
+    
+    .layout.mobile .scroll-note {
+        font-size: 0.9rem;
+        padding: 8px 12px;
+    }
 
     .fade-in {
         opacity: 1;
@@ -804,5 +1196,177 @@
 
     .fade-out {
         opacity: 0;
+    }
+
+    .prayer-time:not(.fullscreen) {
+        background-color: rgba(0, 0, 0, 0.5);
+        backdrop-filter: blur(10px);
+    }
+
+    .prayer-time:not(.fullscreen) .prayer-list-info {
+        padding: 1rem;
+        height: auto;
+        background: none;
+        height: 100%;
+        width: 100%;
+    }
+
+    /* Mobile time display adjustments */
+    .layout.mobile .prayer-time:not(.fullscreen) .time-display {
+        margin-bottom: 0;
+        width: auto;
+    }
+    
+    /* Better touch target sizes for mobile */
+    .layout.mobile .prayer-time {
+        transition: transform 0.2s ease, box-shadow 0.2s ease;
+    }
+    
+    .layout.mobile .prayer-time:active {
+        transform: scale(0.98);
+    }
+    
+    /* Adjust animation for mobile fullscreen transitions */
+    @keyframes mobileSlideIn {
+        from {
+            opacity: 0;
+            transform: translateY(20px);
+        }
+        to {
+            opacity: 1;
+            transform: translateY(0);
+        }
+    }
+    
+    .layout.mobile.fullscreen .prayer-time {
+        animation: mobileSlideIn 0.4s ease-out forwards;
+        animation-delay: calc(var(--index) * 0.08s);
+        width: 100%; /* Ensure full width */
+        margin: 0; /* No margins in fullscreen */
+        padding: 0; /* No padding in fullscreen */
+        height: 20%; /* Maintain height proportion */
+        min-height: 100px; /* Minimum height */
+    }
+    
+    .layout.mobile.fullscreen .prayer-list-info {
+        width: 100%;
+    }
+
+    /* Swipe indicator for mobile */
+    .swipe-indicator {
+        position: absolute;
+        left: 50%;
+        transform: translateX(-50%);
+        width: 40px;
+        height: 20px;
+        opacity: 0.8;
+        z-index: 1000;
+        pointer-events: none;
+        animation: pulseIndicator 2s infinite ease-in-out;
+    }
+    
+    .swipe-indicator.up {
+        bottom: 45px; 
+        animation: bounceUp 2s infinite ease-in-out;
+    }
+    
+    .swipe-indicator.down {
+        bottom: 15px;
+        animation: bounceDown 2s infinite ease-in-out;
+    }
+    
+    .swipe-indicator .arrow {
+        width: 12px;
+        height: 12px;
+        border-right: 3px solid white;
+        border-bottom: 3px solid white;
+        display: block;
+        position: absolute;
+        left: 50%;
+        top: 50%;
+        filter: drop-shadow(0 0 3px rgba(255, 255, 255, 0.7));
+    }
+    
+    .swipe-indicator.up .arrow {
+        transform: translate(-50%, -75%) rotate(225deg); /* Point up to indicate swipe up */
+    }
+    
+    .swipe-indicator.down .arrow {
+        transform: translate(-50%, -75%) rotate(45deg); /* Point down to indicate swipe down */
+    }
+    
+    @keyframes bounceUp {
+        0%, 100% {
+            transform: translateX(-50%) translateY(0);
+            opacity: 0.7;
+        }
+        50% {
+            transform: translateX(-50%) translateY(5px);
+            opacity: 1;
+        }
+    }
+    
+    @keyframes bounceDown {
+        0%, 100% {
+            transform: translateX(-50%) translateY(0);
+            opacity: 0.7;
+        }
+        50% {
+            transform: translateX(-50%) translateY(-5px);
+            opacity: 1;
+        }
+    }
+    
+    @keyframes pulseIndicator {
+        0%, 100% {
+            opacity: 0.4;
+            transform: translateX(-50%) scale(0.95);
+        }
+        50% {
+            opacity: 0.8;
+            transform: translateX(-50%) scale(1.05);
+        }
+    }
+
+    /* Add subtle gradient overlays to improve contrast */
+    .prayer-time::after {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: linear-gradient(rgba(0, 0, 0, 0.2), rgba(0, 0, 0, 0));
+        pointer-events: none;
+    }
+
+    .layout.mobile:not(.fullscreen) .prayer-list {
+        width: 100%;
+        box-sizing: border-box;
+    }
+
+    /* Add a hint text next to the arrows */
+    .swipe-indicator::after {
+        content: attr(data-hint);
+        position: absolute;
+        color: white;
+        font-size: 0.8rem;
+        opacity: 0.9;
+        white-space: nowrap;
+        text-shadow: 0 0 5px rgba(0, 0, 0, 0.8);
+    }
+    
+    .swipe-indicator.up::after {
+        content: "Swipe up to see all prayer times"; 
+        top: 25px;
+        left: 50%;
+        transform: translateX(-50%);
+    }
+    
+    .swipe-indicator.down::after {
+        content: "Go back";
+        bottom: 25px;
+        left: 50%;
+        transform: translateX(-50%);
     }
 </style>
