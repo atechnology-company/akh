@@ -37,6 +37,12 @@
     }
     
     onMount(() => {
+        // Load saved page from localStorage on mount
+        const savedPage = localStorage.getItem('akhLastPage');
+        if (savedPage !== null) {
+            currentPageIndex = parseInt(savedPage);
+            previousPageIndex = currentPageIndex;
+        }
         updateIndicatorPosition();
     });
 
@@ -45,6 +51,8 @@
         previousPageIndex = currentPageIndex;
         currentPageIndex = index;
         updateIndicatorPosition();
+        // Save current page to localStorage
+        localStorage.setItem('akhLastPage', currentPageIndex.toString());
     };
 
     const nextPage = () => {
@@ -52,6 +60,8 @@
         previousPageIndex = currentPageIndex;
         currentPageIndex = (currentPageIndex + 1) % pages.length;
         updateIndicatorPosition();
+        // Save current page to localStorage
+        localStorage.setItem('akhLastPage', currentPageIndex.toString());
     };
 
     const prevPage = () => {
@@ -59,6 +69,8 @@
         previousPageIndex = currentPageIndex;
         currentPageIndex = (currentPageIndex - 1 + pages.length) % pages.length;
         updateIndicatorPosition();
+        // Save current page to localStorage
+        localStorage.setItem('akhLastPage', currentPageIndex.toString());
     };
 
     let touchStartX = 0;
@@ -208,6 +220,7 @@
         width: 100%;
         height: 100%;
         position: relative;
+        overflow: hidden;
     }
 
     .full {
@@ -216,17 +229,22 @@
         position: absolute;
         top: 0;
         left: 0;
+        overflow: hidden;
+        transform: translateZ(0); /* Force GPU acceleration */
     }
 </style>
 
 <div class="header-trigger"
     on:mouseenter={showHeader}
-    on:mouseleave={hideHeader}>
+    on:mouseleave={hideHeader}
+    role="button"
+    tabindex="0">
 </div>
 
 <div class="header {isHeaderVisible ? 'visible' : ''}"
     on:mouseenter={showHeader}
-    on:mouseleave={hideHeader}>
+    on:mouseleave={hideHeader}
+    role="banner">
     <div class="brand">akh</div>
     <div class="nav-section">
         {#each pageNames as name, i}
@@ -261,7 +279,8 @@
                     duration: 300, 
                     opacity: 0,
                     easing: cubicOut
-                }}>
+                }}
+                style="will-change: transform, opacity;">
                 <svelte:component this={pages[currentPageIndex]} />
             </div>
         {/key}

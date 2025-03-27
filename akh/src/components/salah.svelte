@@ -23,6 +23,9 @@
     let isTransitioning = false;
     let isInitialLoad = true;
     let fadeState = "visible"; // "visible", "hidden", "fading-in", "fading-out"
+    let showScrollNote = false;
+
+    $: showScrollNote = !isFullscreen;
 
     // Get bezels from parent component
     let containerHeight = '100%';
@@ -302,6 +305,16 @@
             </div>
         {/if}
     </div>
+    {#if showScrollNote}
+        <div class="scroll-note" class:fade-in={showScrollNote} class:fade-out={!showScrollNote}>
+            Scroll to see all prayer times
+        </div>
+    {/if}
+    {#if !showScrollNote}
+        <div class="scroll-note" class:fade-in={!showScrollNote} class:fade-out={showScrollNote}>
+            Scroll again to see the focused view
+        </div>
+    {/if}
 </div>
 
 <style>
@@ -320,6 +333,13 @@
         font-family: "Onest", sans-serif;
         background: #000;
         border-radius: 8px;
+        scrollbar-width: none;
+        -ms-overflow-style: none;
+        transform: translateZ(0); /* Force GPU acceleration */
+    }
+    
+    .layout::-webkit-scrollbar {
+        display: none; /* Hide scrollbar for Chrome, Safari and Opera */
     }
     
     /* Initial load animation */
@@ -510,6 +530,7 @@
         flex-direction: column;
         border-radius: 0 8px 8px 0;
         overflow: hidden;
+        transform: translateZ(0); /* Force GPU acceleration */
     }
     
     .prayer-list-overlay {
@@ -534,8 +555,16 @@
         grid-auto-rows: 1fr;
         height: 100%;
         overflow-y: auto;
+        overflow-x: hidden;
         position: relative;
         z-index: 2;
+        scrollbar-width: none; /* Firefox */
+        -ms-overflow-style: none; /* IE and Edge */
+        transform: translateZ(0); /* Force GPU acceleration */
+    }
+
+    .prayer-grid::-webkit-scrollbar {
+        display: none; /* Hide scrollbar for Chrome, Safari and Opera */
     }
 
     .prayer-list.fullscreen {
@@ -754,5 +783,26 @@
             opacity: 1;
             transform: translateX(0);
         }
+    }
+
+    .scroll-note {
+        position: absolute;
+        bottom: 20px;
+        right: 20px;
+        background-color: rgba(0, 0, 0, 0.7);
+        color: white;
+        padding: 10px 15px;
+        border-radius: 5px;
+        transition: opacity 0.5s ease;
+        opacity: 1;
+        z-index: 1000;
+    }
+
+    .fade-in {
+        opacity: 1;
+    }
+
+    .fade-out {
+        opacity: 0;
     }
 </style>

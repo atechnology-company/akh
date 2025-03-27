@@ -124,10 +124,13 @@
     <div id="result-text">{resultText}</div>
     {#if isLoading}
       <div class="generation-indicator">
-        <div class="dots">
-          <span></span>
-          <span></span>
-          <span></span>
+        <div class="galaxy-loader">
+          <div class="crescent-moon"></div>
+          <div class="star star-1"></div>
+          <div class="star star-2"></div>
+          <div class="star star-3"></div>
+          <div class="star star-4"></div>
+          <div class="star star-5"></div>
         </div>
         <div class="status-text">{resultText}</div>
       </div>
@@ -179,7 +182,7 @@
 
   .container {
     position: relative;
-    width: 95%;
+    min-width: 95%;
     margin: 0 auto;
     height: 100vh;
     margin-left: 40px;
@@ -366,54 +369,116 @@
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 1rem;
+    gap: 2rem;
     z-index: 100;
-    background: linear-gradient(to bottom, rgba(255, 248, 231, 0.95) 0%, rgba(255, 248, 231, 0.8) 50%, rgba(255, 248, 231, 0) 100%);
-    padding: 2rem 1rem;
-    backdrop-filter: blur(5px);
+    background: linear-gradient(to top, rgba(255, 248, 231, 1) 0%, rgba(255, 248, 231, 0.95) 40%, rgba(255, 248, 231, 0.7) 80%, rgba(255, 248, 231, 0) 100%);
+    padding: 4rem 2rem;
   }
 
-  .dots {
+  .galaxy-loader {
+    position: relative;
+    width: 100px;
+    height: 100px;
     display: flex;
-    gap: 0.5rem;
+    justify-content: center;
+    align-items: center;
+    animation: galaxy-rotate 12s infinite linear;
   }
 
-  .dots span {
+  .crescent-moon {
+    position: absolute;
+    width: 60px;
+    height: 60px;
+    border-radius: 50%;
+    background: transparent;
+    box-shadow: 15px 15px 0 0 #000;
+    animation: moon-pulse 3s infinite ease-in-out;
+    transform-origin: 25% 25%;
+  }
+
+  .star {
+    position: absolute;
+    background-color: #000;
+    clip-path: polygon(50% 0%, 61% 35%, 98% 35%, 68% 57%, 79% 91%, 50% 70%, 21% 91%, 32% 57%, 2% 35%, 39% 35%);
+    opacity: 0.8;
+    animation: twinkle 3s infinite ease-in-out;
+  }
+
+  .star-1 {
+    width: 12px;
+    height: 12px;
+    top: 10px;
+    left: 50%;
+    animation-delay: 0s;
+  }
+
+  .star-2 {
+    width: 10px;
+    height: 10px;
+    top: 50%;
+    right: 10px;
+    animation-delay: 0.3s;
+  }
+
+  .star-3 {
+    width: 14px;
+    height: 14px;
+    bottom: 10px;
+    left: 50%;
+    animation-delay: 0.6s;
+  }
+
+  .star-4 {
     width: 8px;
     height: 8px;
-    background: #000;
-    border-radius: 50%;
-    display: inline-block;
-    animation: bounce 1.4s infinite ease-in-out both;
+    top: 50%;
+    left: 10px;
+    animation-delay: 0.9s;
   }
 
-  .dots span:nth-child(1) {
-    animation-delay: -0.32s;
+  .star-5 {
+    width: 16px;
+    height: 16px;
+    top: 30px;
+    right: 30px;
+    animation-delay: 1.2s;
   }
 
-  .dots span:nth-child(2) {
-    animation-delay: -0.16s;
+  @keyframes galaxy-rotate {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+  }
+
+  @keyframes moon-pulse {
+    0%, 100% { 
+      transform: scale(0.9);
+      opacity: 0.85;
+    }
+    50% { 
+      transform: scale(1.1);
+      opacity: 1;
+    }
+  }
+
+  @keyframes twinkle {
+    0%, 100% { 
+      transform: scale(0.5);
+      opacity: 0.5;
+    }
+    50% { 
+      transform: scale(1.3);
+      opacity: 1;
+    }
   }
 
   .status-text {
     font-family: 'Onest', sans-serif;
-    font-size: 1.2rem;
+    font-size: 1.4rem;
     color: #000;
     opacity: 0.8;
     text-align: center;
     max-width: 600px;
     line-height: 1.4;
-  }
-
-  @keyframes bounce {
-    0%, 80%, 100% { 
-      transform: scale(0);
-      opacity: 0.3;
-    }
-    40% { 
-      transform: scale(1);
-      opacity: 1;
-    }
   }
 
   /* Mobile responsiveness */
@@ -451,11 +516,27 @@
     }
 
     .generation-indicator {
-      padding: 1.5rem 1rem;
+      padding: 3rem 1.5rem;
     }
     
+    .galaxy-loader {
+      width: 80px;
+      height: 80px;
+    }
+    
+    .crescent-moon {
+      width: 50px;
+      height: 50px;
+    }
+    
+    .star-1 { width: 10px; height: 10px; }
+    .star-2 { width: 8px; height: 8px; }
+    .star-3 { width: 12px; height: 12px; }
+    .star-4 { width: 7px; height: 7px; }
+    .star-5 { width: 14px; height: 14px; }
+    
     .status-text {
-      font-size: 1rem;
+      font-size: 1.2rem;
       max-width: 400px;
     }
   }
@@ -475,11 +556,27 @@
     }
 
     .generation-indicator {
-      padding: 1rem 0.8rem;
+      padding: 2rem 1rem;
     }
     
+    .galaxy-loader {
+      width: 60px;
+      height: 60px;
+    }
+    
+    .crescent-moon {
+      width: 40px;
+      height: 40px;
+    }
+    
+    .star-1 { width: 8px; height: 8px; }
+    .star-2 { width: 6px; height: 6px; }
+    .star-3 { width: 10px; height: 10px; }
+    .star-4 { width: 5px; height: 5px; }
+    .star-5 { width: 12px; height: 12px; }
+    
     .status-text {
-      font-size: 0.9rem;
+      font-size: 1rem;
       max-width: 300px;
     }
   }

@@ -1,14 +1,13 @@
-# akh
+# akh 0.0.4-experimental
 the utilitarian muslim companion
 
 written in svelte with help from al-adhan api and nativescript
 
-## alif 0.0.3-experimental
+currently only salah and alif are coded and are **NOT FINAL** do not use this for religious advice please, or at least take what you get with a grain of salt and do your own research
+
+## alif
 Artificial Learning Integration for Fataawa
 
 alif is an ai-powered search engine, using the [plates engine](https://github.com/atechnology-company/plates-mobile) to help the ummah
 
-using granite 2.0 2b, bart large and gemini 2.0 flash along with a library of pre-existing verified fataawa from islamqa.org and soon to be other scenarios you can input scenarios or complex queries for ai to dismantle, understand and provide relevant digestible rulings from verified sources
-
-for now, it doesnt... really work. but its fine.
-workable output tho
+using bart large and gemini 2.0 flash along with access to a wide base of pre-existing verified fataawa from a list of verifiable sources, you can input scenarios or complex queries for ai to dismantle, understand and provide relevant digestible rulings from verified sources
