@@ -1,7 +1,7 @@
 {
 	"name": "akh",
 	"private": true,
-	"version": "0.0.4-experimental",
+	"version": "0.0.5-experimental",
 	"type": "module",
 	"scripts": {
 		"dev": "vite dev",
@@ -16,7 +16,8 @@
 		"ns:ios": "ns run ios",
 		"ns:build:android": "ns build android",
 		"ns:build:ios": "ns build ios",
-		"mobile:dev": "concurrently \"npm run dev\" \"npm run ns:android\""
+		"mobile:dev": "concurrently \"npm run dev\" \"npm run ns:android\"",
+		"netlify": "npm run prepare && npm run build"
 	},
 	"devDependencies": {
 		"@eslint/compat": "^1.2.5",

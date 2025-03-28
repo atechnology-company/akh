@@ -1,0 +1,20 @@
+[build]
+  command = "npm run netlify"
+  publish = "build"
+  functions = "functions"
+  
+[build.environment]
+  NODE_VERSION = "20"
+
+[functions]
+  directory = "functions"
+
+[[redirects]]
+  from = "/*"
+  to = "/.netlify/functions/sveltekit-render"
+  status = 200
+
+[[headers]]
+  for = "/manifest.webmanifest"
+  [headers.values]
+    Content-Type = "application/manifest+json" 
