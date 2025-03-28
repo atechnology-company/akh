@@ -572,7 +572,27 @@ export async function generateWithGemini(prompt: string, temperature: number = 0
     return data.candidates[0].content.parts[0].text;
 }
 
-// Main generation function that uses the status callback
+// Function to detect language
+function detectLanguage(text: string): string {
+    // Russian detection
+    const russianRegex = /[\u0400-\u04FF]/;
+    if (russianRegex.test(text)) return 'ru';
+
+    // Indonesian detection
+    const indonesianWords = ['apa', 'bagaimana', 'dimana', 'kapan', 'siapa', 'mengapa', 'dan', 'atau', 'tetapi', 'karena'];
+    const words = text.toLowerCase().split(/\s+/);
+    const indonesianCount = words.filter(word => indonesianWords.includes(word)).length;
+    if (indonesianCount > 2) return 'id';
+
+    // Mandarin detection
+    const mandarinRegex = /[\u4E00-\u9FFF]/;
+    if (mandarinRegex.test(text)) return 'zh';
+
+    // Default to English
+    return 'en';
+}
+
+// Update the generateContent function to use Gemini's language capabilities
 export async function generateContent(
     input: string,
     statusCallback: (status: string) => void
@@ -588,6 +608,10 @@ export async function generateContent(
     }
 
     try {
+        // Detect language from input
+        const detectedLanguage = detectLanguage(trimmedInput);
+        console.log('Detected language:', detectedLanguage);
+        
         statusCallback('Searching for relevant information');
         
         const webResults = await searchAndFetchContent(trimmedInput, statusCallback);
@@ -604,53 +628,35 @@ export async function generateContent(
                 `SOURCE: "${result.title}"\nCONTENT:\n${result.content}\n---\n`
             ).join('\n');
 
-        // First phase: Generate organized summary with better structure
-        console.log('Starting organization phase...');
-        const summaryPrompt = `${ASSISTANT_PROMPT}s
+        // Generate response using Gemini with language-specific instructions
+        const prompt = `You are a helpful AI assistant specializing in Islamic knowledge. Please respond in the same language as the input question.
 
-Task: Organize and summarize the following Islamic information into clear sections.
-
-Sources:
+Context from Islamic sources:
 ${webContext}
-
-Output Format:
-1. Key point in English with digestible explanation
-2. evidence from sources, no need for links, just the book or scholar and the content.
-
-Use markdown formatting.
-
-Begin Summary:`;
-        
-        statusCallback('Processing information...');
-        const organizedSummary = await generateWithGemini(summaryPrompt, 0.3);
-
-        if (!organizedSummary) {
-            throw new Error('Failed to generate summary');
-        }
-
-        console.log('Organization phase complete. Length:', organizedSummary.length);
-        statusCallback('Organizing Information:\n\n' + organizedSummary);
-
-        // Second phase: Generate final response using Gemini
-        console.log('Starting response phase...');
-        const finalPrompt = `${ASSISTANT_PROMPT}
-
-Context:
-${organizedSummary}
 
 Question: ${trimmedInput}
 
-Provide a structured response following the format above.`;
+Instructions:
+1. Use ONLY information provided in the context above
+2. If quotes exist, use them exactly as provided with proper attribution
+3. If context lacks clear evidence, acknowledge the limitations
+4. Present multiple viewpoints when available
+5. Clearly distinguish between:
+   - Direct quotes from sources
+   - Summarized information
+   - General guidance based on provided information
+
+Begin Response:`;
 
         statusCallback('Formulating response...');
-        const finalResponse = await generateWithGemini(finalPrompt, 0.7);
+        const response = await generateWithGemini(prompt, 0.7);
 
-        if (!finalResponse) {
+        if (!response) {
             throw new Error('Failed to generate response');
         }
 
-        console.log('Response phase complete. Length:', finalResponse.length);
-        return finalResponse;
+        console.log('Response complete. Length:', response.length);
+        return response;
         
     } catch (error) {
         const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
