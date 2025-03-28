@@ -9,11 +9,6 @@
 [functions]
   directory = "functions"
 
-[[redirects]]
-  from = "/*"
-  to = "/.netlify/functions/sveltekit-render"
-  status = 200
-
 [[headers]]
   for = "/manifest.webmanifest"
   [headers.values]
