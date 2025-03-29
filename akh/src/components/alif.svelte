@@ -2,8 +2,9 @@
   import { onMount } from 'svelte';
   import { generateContent } from '../modules/plates-engine';
   import * as AlifUI from '../modules/alif-ui';
-  import type { AlifComponentData } from '../types';
+  import type { AlifComponentData } from '../types/index';
   import { marked } from 'marked';
+  import { t } from '$lib/i18n';
 
   let promptInput: HTMLTextAreaElement;
   let greeting: HTMLHeadingElement;
@@ -99,18 +100,18 @@
 
 <div id="input-page" class="page" class:active={isInputPage}>
   <div class="container">
-    <h1 id="greeting" bind:this={greeting}>Assalamualaikum!</h1>
+    <h1 id="greeting" bind:this={greeting}>{t('greeting')}</h1>
     <textarea
       bind:this={promptInput}
       id="prompt-input"
-      placeholder="What would you like to learn today?"
+      placeholder={t('what_to_learn')}
       on:input={handleInput}
       on:keypress={handleKeyPress}
       disabled={isLoading}
     ></textarea>
   </div>
   <div id="typing-tip" class="hidden" bind:this={typingTip}>
-    just press enter to search
+    {t('press_enter')}
   </div>
 </div>
 

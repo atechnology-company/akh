@@ -1,3 +1,25 @@
 {
-    "$schema": "https://inlang.com/schema/inlang-message-format"
+    "$schema": "https://inlang.com/schema/inlang-message-format",
+    "greeting": "Ассаляму алейкум!",
+    "loading_prayer_times": "загрузка времени молитв",
+    "until": "до",
+    "retry": "Повторить",
+    "error_fetching": "Не удалось получить время молитв",
+    "unknown_error": "Произошла неизвестная ошибка",
+    "prayer_names": {
+        "fajr": "Фаджр",
+        "dhuhr": "Зухр",
+        "asr": "Аср",
+        "maghrib": "Магриб",
+        "isha": "Иша",
+        "midnight": "Полночь",
+        "first_third": "Первая треть"
+    },
+    "scroll_to_see": "Прокрутите, чтобы увидеть все время молитв",
+    "scroll_again": "Прокрутите еще раз, чтобы увидеть фокусированный вид",
+    "swipe_up_hint": "Проведите вверх, чтобы увидеть все время молитв",
+    "swipe_down_hint": "Вернуться",
+    "what_to_learn": "Что вы хотели бы узнать сегодня?",
+    "press_enter": "просто нажмите enter для поиска",
+    "error_occurred": "Произошла ошибка"
 }

@@ -1,6 +1,7 @@
 <script lang="ts">
     import { onMount } from 'svelte';
     import { getPrayerData, type PrayerTimes } from '../modules/salah';
+    import { t } from '$lib/i18n';
     
     let prayerTimes: PrayerTimes = {
         fajr: '',
@@ -9,6 +10,10 @@
         maghrib: '',
         isha: ''
     };
+    
+    // Add loading states and cache
+    let isLoadingNew = false; // For background loading
+    let cachedData = null; // For storing cached data from localStorage
     
     function calculateMidnight(isha: string, fajr: string): string {
         const timeToMinutes = (timeStr: string) => {
@@ -247,17 +252,86 @@
         }, 50);
     }
 
-    async function initializePrayerTimes() {
+    // Function to load cached data from localStorage
+    function loadCachedData() {
         try {
-            isLoading = true;
-            error = null;
+            const cached = localStorage.getItem('prayer_cache');
+            if (cached) {
+                const parsedCache = JSON.parse(cached);
+                // Check if cache is still valid (less than 24 hours old)
+                if (parsedCache && parsedCache.timestamp && 
+                    (Date.now() - parsedCache.timestamp < 24 * 60 * 60 * 1000)) {
+                    cachedData = parsedCache.data;
+                    // Use cached data immediately while fresh data loads
+                    if (cachedData) {
+                        prayerTimes = cachedData.prayerTimes;
+                        hijriDate = cachedData.hijriDate;
+                        location = cachedData.location.locationName;
+                        isLoading = false; // Stop showing loading indicator if we have cached data
+                        
+                        // Still load fresh data in background
+                        isLoadingNew = true;
+                        refreshPrayerTimes();
+                    }
+                    return true;
+                }
+            }
+            return false;
+        } catch (e) {
+            console.error('Error loading cached prayer data:', e);
+            return false;
+        }
+    }
+    
+    // Function to save data to cache
+    function saveCacheData(data: ReturnType<typeof getPrayerData> extends Promise<infer T> ? T : never) {
+        try {
+            const cacheObject = {
+                timestamp: Date.now(),
+                data: data
+            };
+            localStorage.setItem('prayer_cache', JSON.stringify(cacheObject));
+        } catch (e) {
+            console.error('Error saving prayer data to cache:', e);
+        }
+    }
+    
+    // Function to refresh data in background
+    async function refreshPrayerTimes() {
+        try {
             const data = await getPrayerData();
             if (data) {
                 prayerTimes = data.prayerTimes;
                 hijriDate = data.hijriDate;
                 location = data.location.locationName;
-            } else {
-                error = 'Failed to fetch prayer times';
+                saveCacheData(data);
+            }
+        } catch (err) {
+            console.error('Error refreshing prayer times:', err);
+        } finally {
+            isLoadingNew = false;
+        }
+    }
+
+    async function initializePrayerTimes() {
+        try {
+            isLoading = true;
+            error = null;
+            
+            // Try to load from cache first
+            const hasCachedData = loadCachedData();
+            
+            // If no cache, or we need to update UI with fresh data
+            if (!hasCachedData) {
+                const data = await getPrayerData();
+                if (data) {
+                    prayerTimes = data.prayerTimes;
+                    hijriDate = data.hijriDate;
+                    location = data.location.locationName;
+                    saveCacheData(data);
+                } else {
+                    error = 'Failed to fetch prayer times';
+                }
             }
         } catch (err) {
             error = err instanceof Error ? err.message : 'An unknown error occurred';
@@ -316,12 +390,12 @@
                 <div class="star star-4"></div>
                 <div class="star star-5"></div>
                 </div>
-                <div class="status-text">loading prayer times</div>
+                <div class="status-text">{t('loading_prayer_times')}</div>
             </div>
         {:else if error}
             <div class="error">
                 <p>{error}</p>
-                <button on:click={initializePrayerTimes}>Retry</button>
+                <button on:click={initializePrayerTimes}>{t('retry')}</button>
             </div>
         {:else if currentPrayer}
             <div class="header">
@@ -331,12 +405,12 @@
             <div class="next-prayer">
                 <div class="countdown">
                     <p class="time">{timeRemaining}</p>
-                    <p class="subtitle">until {nextPrayer}</p>
+                    <p class="subtitle">{t('until')} {t(`prayer_names.${nextPrayer}`)}</p>
                 </div>
             </div>
             <div class="prayer-info">
                 <div class="prayer-details">
-                    <h2>{currentPrayer}</h2>
+                    <h2>{t(`prayer_names.${currentPrayer}`)}</h2>
                     <p class="time">{prayerTimes[currentPrayer]}</p>
                 </div>
             </div>
@@ -356,12 +430,12 @@
                 <div class="star star-4"></div>
                 <div class="star star-5"></div>
                 </div>
-                <div class="status-text">loading prayer times</div>
+                <div class="status-text">{t('loading_prayer_times')}</div>
             </div>
         {:else if error}
             <div class="error">
                 <p>{error}</p>
-                <button on:click={initializePrayerTimes}>Retry</button>
+                <button on:click={initializePrayerTimes}>{t('retry')}</button>
             </div>
         {:else}
             <div class="prayer-grid">
@@ -369,7 +443,7 @@
                     <div class="prayer-time" data-prayer="midnight" style="--index: 0">
                         <div class="prayer-list-info">
                             {#if isMobile}
-                                <p class="prayer-name">midnight</p>
+                                <p class="prayer-name">{t('prayer_names.midnight')}</p>
                                 <div class="time-display">
                                     <p class="time">{calculateMidnight(prayerTimes.isha, prayerTimes.fajr)}</p>
                                 </div>
@@ -377,14 +451,14 @@
                                 <div class="time-display">
                                     <p class="time">{calculateMidnight(prayerTimes.isha, prayerTimes.fajr)}</p>
                                 </div>
-                                <p class="prayer-name">midnight</p>
+                                <p class="prayer-name">{t('prayer_names.midnight')}</p>
                             {/if}
                         </div>
                     </div>
                     <div class="prayer-time" data-prayer="tahajjud" style="--index: 1">
                         <div class="prayer-list-info">
                             {#if isMobile}
-                                <p class="prayer-name">first third</p>
+                                <p class="prayer-name">{t('prayer_names.first_third')}</p>
                                 <div class="time-display">
                                     <p class="time">{calculateFirstThird(prayerTimes.isha, prayerTimes.fajr)}</p>
                                 </div>
@@ -392,14 +466,14 @@
                                 <div class="time-display">
                                     <p class="time">{calculateFirstThird(prayerTimes.isha, prayerTimes.fajr)}</p>
                                 </div>
-                                <p class="prayer-name">first third</p>
+                                <p class="prayer-name">{t('prayer_names.first_third')}</p>
                             {/if}
                         </div>
                     </div>
                     <div class="prayer-time" data-prayer="fajr" style="--index: 2">
                         <div class="prayer-list-info">
                             {#if isMobile}
-                                <p class="prayer-name">fajr</p>
+                                <p class="prayer-name">{t('prayer_names.fajr')}</p>
                                 <div class="time-display">
                                     <p class="time">{prayerTimes.fajr}</p>
                                 </div>
@@ -407,7 +481,7 @@
                                 <div class="time-display">
                                     <p class="time">{prayerTimes.fajr}</p>
                                 </div>
-                                <p class="prayer-name">fajr</p>
+                                <p class="prayer-name">{t('prayer_names.fajr')}</p>
                             {/if}
                         </div>
                     </div>
@@ -450,7 +524,7 @@
                             <div class="prayer-list-info">
                                 {#if !isFullscreen}
                                     {#if isMobile}
-                                        <p class="prayer-name">{prayer}</p>
+                                        <p class="prayer-name">{t(`prayer_names.${prayer}`)}</p>
                                         <div class="time-display">
                                             <p class="time">{time}</p>
                                         </div>
@@ -458,7 +532,7 @@
                                         <div class="time-display">
                                             <p class="time">{time}</p>
                                         </div>
-                                        <p class="prayer-name">{prayer}</p>
+                                        <p class="prayer-name">{t(`prayer_names.${prayer}`)}</p>
                                     {/if}
                                 {:else}
                                     <h2 class="prayer-name">{prayer}</h2>
@@ -473,22 +547,22 @@
     </div>
     {#if showScrollNote}
         <div class="scroll-note" class:fade-in={showScrollNote} class:fade-out={!showScrollNote}>
-            Scroll to see all prayer times
+            {t('scroll_to_see')}
         </div>
     {/if}
     {#if !showScrollNote && !isMobile}
         <div class="scroll-note" class:fade-in={!showScrollNote} class:fade-out={showScrollNote}>
-            Scroll again to see the focused view
+            {t('scroll_again')}
         </div>
     {/if}
     
     {#if isMobile && isFirstVisit}
         {#if !isFullscreen}
-            <div class="swipe-indicator up">
+            <div class="swipe-indicator up" data-hint={t('swipe_up_hint')}>
                 <div class="arrow"></div>
             </div>
         {:else}
-            <div class="swipe-indicator down">
+            <div class="swipe-indicator down" data-hint={t('swipe_down_hint')}>
                 <div class="arrow"></div>
             </div>
         {/if}

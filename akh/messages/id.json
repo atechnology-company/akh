@@ -1,3 +1,25 @@
 {
-    "$schema": "https://inlang.com/schema/inlang-message-format"
+    "$schema": "https://inlang.com/schema/inlang-message-format",
+    "greeting": "Assalamualaikum!",
+    "loading_prayer_times": "memuat waktu sholat",
+    "until": "hingga",
+    "retry": "Coba Lagi",
+    "error_fetching": "Gagal mengambil waktu sholat",
+    "unknown_error": "Terjadi kesalahan yang tidak diketahui",
+    "prayer_names": {
+        "fajr": "Subuh",
+        "dhuhr": "Dzuhur",
+        "asr": "Ashar",
+        "maghrib": "Maghrib",
+        "isha": "Isya",
+        "midnight": "Tengah Malam",
+        "first_third": "Sepertiga Malam"
+    },
+    "scroll_to_see": "Scroll untuk melihat semua waktu sholat",
+    "scroll_again": "Scroll lagi untuk melihat tampilan fokus",
+    "swipe_up_hint": "Geser ke atas untuk melihat semua waktu sholat",
+    "swipe_down_hint": "Kembali",
+    "what_to_learn": "Apa yang ingin Anda pelajari hari ini?",
+    "press_enter": "tekan enter untuk mencari",
+    "error_occurred": "Terjadi kesalahan"
 }

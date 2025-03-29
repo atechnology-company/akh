@@ -1,3 +1,25 @@
 {
-    "$schema": "https://inlang.com/schema/inlang-message-format"
+    "$schema": "https://inlang.com/schema/inlang-message-format",
+    "greeting": "Assalamualaikum!",
+    "loading_prayer_times": "loading prayer times",
+    "until": "until",
+    "retry": "Retry",
+    "error_fetching": "Failed to fetch prayer times",
+    "unknown_error": "An unknown error occurred",
+    "prayer_names": {
+        "fajr": "Fajr",
+        "dhuhr": "Dhuhr",
+        "asr": "Asr",
+        "maghrib": "Maghrib",
+        "isha": "Isha",
+        "midnight": "Midnight",
+        "first_third": "First Third"
+    },
+    "scroll_to_see": "Scroll to see all prayer times",
+    "scroll_again": "Scroll again to see the focused view",
+    "swipe_up_hint": "Swipe up to see all prayer times",
+    "swipe_down_hint": "Go back",
+    "what_to_learn": "What would you like to learn today?",
+    "press_enter": "just press enter to search",
+    "error_occurred": "Error occurred"
 }

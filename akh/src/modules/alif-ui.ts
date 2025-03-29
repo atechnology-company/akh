@@ -2,6 +2,7 @@ import $ from 'jquery';
 import type { AlifComponentData } from '../types';
 import autosize from 'autosize';
 import { marked } from 'marked';
+import { t } from '$lib/i18n';
 
 /**
  * Initialize the UI elements for the Alif component
@@ -79,7 +80,7 @@ export function displayFinalResult(content: string): void {
 export function displayError(errorMessage: string): void {
   const $resultElement = $('#result-text');
   $resultElement.removeClass('thinking');
-  $resultElement.html(`<div class="error-message">Error occurred: ${errorMessage}</div>`);
+  $resultElement.html(`<div class="error-message">${t('error_occurred')}: ${errorMessage}</div>`);
 }
 
 /**
