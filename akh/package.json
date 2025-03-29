@@ -1,11 +1,11 @@
 {
 	"name": "akh",
 	"private": true,
-	"version": "0.0.7-experimental",
+	"version": "0.1.0-alpha",
 	"type": "module",
 	"scripts": {
 		"dev": "vite dev",
-		"build": "vite build",
+		"build": "vite build && echo '/* /.netlify/functions/sveltekit-render 200' > build/_redirects",
 		"preview": "vite preview",
 		"prepare": "svelte-kit sync || echo ''",
 		"check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
@@ -17,7 +17,7 @@
 		"ns:build:android": "ns build android",
 		"ns:build:ios": "ns build ios",
 		"mobile:dev": "concurrently \"npm run dev\" \"npm run ns:android\"",
-		"netlify": "npm run prepare && npm run build && echo '/* /index.html 200' > build/_redirects && echo '/*/manifest.webmanifest  Content-Type: application/manifest+json' > build/_headers"
+		"netlify": "npm run prepare && npm run build"
 	},
 	"devDependencies": {
 		"@eslint/compat": "^1.2.5",
