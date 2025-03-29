@@ -1,44 +1,37 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
-  import { generateContent } from '../modules/plates-engine';
+  import * as PlatesEngine from '../modules/plates-engine';
   import * as AlifUI from '../modules/alif-ui';
   import type { AlifComponentData, TopicSection } from '../types/index';
   import { marked } from 'marked';
   import { t, currentLanguage } from '$lib/i18n';
-  import { languageTag } from '$lib/paraglide/runtime';
+  import autosize from 'autosize';
+
+  // Define type for autosize with update method
+  type AutosizeType = {
+    (elements: HTMLElement | NodeListOf<HTMLElement>): void;
+    update: (elements: HTMLElement | NodeListOf<HTMLElement>) => void;
+    destroy: (elements: HTMLElement | NodeListOf<HTMLElement>) => void;
+  };
+
+  // Cast autosize to our extended type
+  const autosizeWithUpdate = autosize as AutosizeType;
 
   let promptInput: HTMLTextAreaElement;
   let greeting: HTMLHeadingElement;
   let typingTip: HTMLDivElement;
-  let resultText: string = '';
-  let isInputPage: boolean = true;
-  let isLoading: boolean = false;
-  let isMultiTopic: boolean = false;
+  let resultText = '';
+  let isInputPage = true;
+  let isLoading = false;
+  let isMultiTopic = false;
   let topicSections: TopicSection[] = [];
-  let activeTopicIndex: number = 0;
-  let isTransitioning: boolean = false;
-  let touchStartY: number = 0;
+  let activeTopicIndex = 0;
+  let isTransitioning = false;
+  let touchStartY = 0;
   let scrollTimeout: NodeJS.Timeout;
-  let translatedGreeting: string = '';
-
-  // Subscribe to language changes
-  const unsubscribe = currentLanguage.subscribe(lang => {
-    // Update greeting text when language changes
-    translatedGreeting = t('greeting');
-    
-    // Update UI if component refs are available
-    if (greeting) {
-      greeting.innerText = translatedGreeting;
-    }
-    
-    if (typingTip) {
-      typingTip.innerText = t('press_enter');
-    }
-    
-    if (promptInput) {
-      promptInput.placeholder = t('what_to_learn');
-    }
-  });
+  let translatedGreeting = '';
+  let topScrollIndicator: HTMLDivElement;
+  let bottomScrollIndicator: HTMLDivElement;
 
   // Create component data object for passing to UI functions
   const componentData: AlifComponentData = {
@@ -50,8 +43,16 @@
     loadingOverlay: null
   };
 
+  // Subscribe to language changes
+  const unsubscribe = currentLanguage.subscribe(lang => {
+    translatedGreeting = t('greeting');
+    
+    if (greeting) greeting.innerText = translatedGreeting;
+    if (typingTip) typingTip.innerText = t('press_enter');
+    if (promptInput) promptInput.placeholder = t('what_to_learn');
+  });
+
   onMount(() => {
-    // Get translated greeting
     translatedGreeting = t('greeting');
     
     // Update component data with references
@@ -59,23 +60,68 @@
     componentData.greeting = greeting;
     componentData.typingTip = typingTip;
     
-    // Initialize UI
+    // Initialize UI and apply autosize
     AlifUI.initializeUI(componentData);
+    
+    if (promptInput) {
+      setTimeout(() => autosizeWithUpdate.update(promptInput), 100);
+    }
+    
+    // Add event listener for quote sources
+    document.addEventListener('click', handleQuoteSourceClick);
+    
+    // Add scroll listener for indicators
+    const resultElement = document.getElementById('result-text');
+    if (resultElement) {
+      resultElement.addEventListener('scroll', handleResultScroll);
+    }
   });
   
   onDestroy(() => {
-    // Clean up subscription
     unsubscribe();
+    if (promptInput) autosizeWithUpdate.destroy(promptInput);
+    document.removeEventListener('click', handleQuoteSourceClick);
+    
+    const resultElement = document.getElementById('result-text');
+    if (resultElement) {
+      resultElement.removeEventListener('scroll', handleResultScroll);
+    }
   });
 
   function handleInput(event: Event): void {
     AlifUI.handlePromptInput(event, componentData);
+    if (promptInput) autosizeWithUpdate.update(promptInput);
   }
 
   function handleKeyPress(event: KeyboardEvent): void {
-    if (event.key === 'Enter' && !event.shiftKey) {
+    if (isInputPage && event.key === 'Enter' && !event.shiftKey) {
       event.preventDefault();
       submitPrompt();
+    }
+  }
+
+  // Handle keyboard navigation for sections
+  function handleKeyDown(event: KeyboardEvent): void {
+    if (!isInputPage && isMultiTopic && !isLoading && !isTransitioning) {
+      if (event.key === 'ArrowUp' && activeTopicIndex > 0) {
+        event.preventDefault();
+        navigateToTopic(activeTopicIndex - 1);
+      } else if (event.key === 'ArrowDown' && activeTopicIndex < topicSections.length - 1) {
+        event.preventDefault();
+        navigateToTopic(activeTopicIndex + 1);
+      } else if (event.key === 'Home') {
+        event.preventDefault();
+        navigateToTopic(0);
+      } else if (event.key === 'End') {
+        event.preventDefault();
+        navigateToTopic(topicSections.length - 1);
+      } else if (/^\d$/.test(event.key) && parseInt(event.key) > 0) {
+        const targetIndex = parseInt(event.key) - 1;
+        if (targetIndex < topicSections.length) {
+          event.preventDefault();
+          navigateToTopic(targetIndex);
+        }
+      }
     }
   }
 
@@ -89,13 +135,18 @@
     const currentY = event.touches[0].clientY;
     const diffY = touchStartY - currentY;
     
-    // Significant swipe (> 50px)
     if (Math.abs(diffY) > 50) {
-      if (diffY > 0 && activeTopicIndex < topicSections.length - 1) {
-        // Swipe up - next topic
+      const resultElement = document.getElementById('result-text');
+      if (!resultElement) return;
+      
+      const isAtBottom = Math.abs(resultElement.scrollHeight - resultElement.scrollTop - resultElement.clientHeight) < 50;
+      const isAtTop = resultElement.scrollTop === 0;
+      
+      if (diffY > 0 && isAtBottom && activeTopicIndex < topicSections.length - 1) {
+        // Swiping up (moving finger up) and at bottom - go to next section
         navigateToTopic(activeTopicIndex + 1);
-      } else if (diffY < 0 && activeTopicIndex > 0) {
-        // Swipe down - previous topic
+      } else if (diffY < 0 && isAtTop && activeTopicIndex > 0) {
+        // Swiping down (moving finger down) and at top - go to previous section
         navigateToTopic(activeTopicIndex - 1);
       }
       touchStartY = currentY;
@@ -108,100 +159,125 @@
     clearTimeout(scrollTimeout);
     
     scrollTimeout = setTimeout(() => {
-      if (event.deltaY > 0 && activeTopicIndex < topicSections.length - 1) {
-        // Scroll down - next topic
+      const resultElement = document.getElementById('result-text');
+      if (!resultElement) return;
+      
+      const isAtBottom = Math.abs(resultElement.scrollHeight - resultElement.scrollTop - resultElement.clientHeight) < 50;
+      const isAtTop = resultElement.scrollTop === 0;
+      
+      if (event.deltaY > 0 && isAtBottom && activeTopicIndex < topicSections.length - 1) {
+        // Scrolling down and at bottom - go to next section
         navigateToTopic(activeTopicIndex + 1);
-      } else if (event.deltaY < 0 && activeTopicIndex > 0) {
-        // Scroll up - previous topic
+      } else if (event.deltaY < 0 && isAtTop && activeTopicIndex > 0) {
+        // Scrolling up and at top - go to previous section
         navigateToTopic(activeTopicIndex - 1);
       }
     }, 50);
   }
 
   function navigateToTopic(index: number): void {
-    if (isTransitioning) return;
-    
-    // Validate input
-    if (!topicSections || !Array.isArray(topicSections) || topicSections.length === 0) {
-      console.error('Cannot navigate: no topic sections available');
-      return;
-    }
+    if (isTransitioning || !topicSections?.length) return;
     
     // Clamp index to valid range
-    if (index < 0 || index >= topicSections.length) {
-      console.error(`Invalid topic index: ${index}. Valid range: 0-${topicSections.length - 1}`);
-      index = Math.max(0, Math.min(index, topicSections.length - 1));
-    }
+    index = Math.max(0, Math.min(index, topicSections.length - 1));
+    
+    // Don't do anything if already on this index
+    if (index === activeTopicIndex) return;
     
     isTransitioning = true;
     
-    // Fade out current topic
     const resultElement = document.getElementById('result-text');
     if (resultElement) {
       resultElement.style.opacity = '0';
       
-      // After fade out, switch topics
       setTimeout(() => {
         activeTopicIndex = index;
         
-        // Fade in new topic
+        if (topicSections[activeTopicIndex]) {
+          // Clean up content
+          let content = topicSections[activeTopicIndex].content;
+          content = content.replace(/^([a-zA-Z])\s+/, '')
+                          .trim()
+                          .replace(/\n{3,}/g, '\n\n');
+          
+          resultText = content;
+          // Use AlifUI for proper formatting
+          AlifUI.displayFinalResult(resultText);
+        }
+        
         setTimeout(() => {
-          if (resultElement) {
-            resultElement.style.opacity = '1';
-          }
-          isTransitioning = false;
-        }, 300);
+          if (resultElement) resultElement.scrollTop = 0;
+          
+          // Reset scroll indicators
+          if (topScrollIndicator) topScrollIndicator.style.opacity = '0.7';
+          if (bottomScrollIndicator) bottomScrollIndicator.style.opacity = '0.7';
+          
+          setTimeout(() => {
+            if (resultElement) resultElement.style.opacity = '1';
+            isTransitioning = false;
+          }, 100);
+        }, 100);
       }, 300);
     } else {
-      console.warn('Result element not found in DOM');
       activeTopicIndex = index;
       isTransitioning = false;
     }
   }
 
   async function submitPrompt(): Promise<void> {
-    if (!promptInput?.value.trim()) return;
+    if (!promptInput?.value?.trim() || isLoading) return;
+    
+    const prompt = promptInput.value.trim();
+    
+    // Initialize loading state
+    isLoading = true;
+    isInputPage = false;
+    isMultiTopic = false;
+    topicSections = [];
+    activeTopicIndex = 0;
+    resultText = t('thinking');
+    
+    // Switch to results page
+    AlifUI.switchToResultsPage();
+    
+    // Update for multi-phase loading messages
+    const phases = [t('searching'), t('analyzing'), t('organizing')];
+    let phaseIndex = 0;
+    
+    // Show different loading messages
+    const loadingInterval = setInterval(() => {
+      phaseIndex = (phaseIndex + 1) % phases.length;
+      resultText = phases[phaseIndex];
+      // Don't update #result-text at all, just update the status-text in the generation indicator
+    }, 3000);
     
     try {
-      // First switch pages and show loading state
-      isInputPage = false;
-      componentData.isInputPage = false;
-      isLoading = true;
-      resultText = 'Searching for relevant information...';
-      isMultiTopic = false;
-      topicSections = [];
-      activeTopicIndex = 0;
-      AlifUI.switchToResultsPage();
+      // Set #result-text to be empty during generation
+      const resultElement = document.getElementById('result-text');
+      if (resultElement) {
+        resultElement.innerHTML = '';
+      }
       
-      // Generate content with status updates
-      const response = await generateContent(
-        promptInput.value,
-        (status: string) => {
+      // Call the generation function with progress updates
+      const response = await PlatesEngine.generateContent(
+        prompt,
+        (status) => {
           resultText = status;
-          AlifUI.updateStatus(status);
+          // Only update the status-text in the generation indicator
         }
       );
       
-      // Handle the response based on its type (string or TopicSection[])
-      setTimeout(() => {
-        if (Array.isArray(response)) {
-          isMultiTopic = true;
-          topicSections = response;
-          // Display first topic immediately
-          resultText = topicSections[0].content;
-          AlifUI.displayFinalResult(topicSections[0].content);
-        } else {
-          resultText = response;
-          AlifUI.displayFinalResult(response);
-        }
-        isLoading = false;
-      }, 100);
+      clearInterval(loadingInterval);
       
+      // Process the response
+      processResponse(response);
+      
+      isLoading = false;
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
-      resultText = `Sorry, something went wrong: ${errorMessage}`;
-      AlifUI.displayError(errorMessage);
-      console.error('Error:', error);
+      clearInterval(loadingInterval);
+      console.error('Error generating response:', error);
+      resultText = t('error_message');
+      AlifUI.displayFinalResult(resultText);
       isLoading = false;
     }
   }
@@ -212,18 +288,294 @@
     isMultiTopic = false;
     topicSections = [];
     activeTopicIndex = 0;
+    
+    // Clear the input field
+    if (promptInput) {
+      promptInput.value = '';
+    }
+    
     setTimeout(() => {
       if (promptInput) {
         promptInput.focus();
+        autosizeWithUpdate.update(promptInput);
       }
     }, 0);
   }
 
-  async function renderMarkdown(text: string): Promise<string> {
-    return marked(text, {
-      breaks: true,
-      gfm: true
-    });
+  // Handle clicks on quote sources with URLs
+  function handleQuoteSourceClick(event: MouseEvent): void {
+    const target = event.target as HTMLElement;
+    
+    // Handle quote sources
+    if (target?.classList.contains('quote-source')) {
+      const url = target.getAttribute('data-url');
+      if (url) window.open(url, '_blank', 'noopener,noreferrer');
+      return;
+    }
+    
+    // Handle quote source items (from multiple sources container)
+    if (target?.classList.contains('quote-source-item')) {
+      const url = target.getAttribute('data-url');
+      if (url) window.open(url, '_blank', 'noopener,noreferrer');
+      return;
+    }
+    
+    // Handle inline references
+    if (target?.classList.contains('inline-reference')) {
+      const url = target.getAttribute('data-url');
+      if (url) window.open(url, '_blank', 'noopener,noreferrer');
+      return;
+    }
+  }
+
+  // Process plain text response to extract H3 sections
+  function processH3Sections(text: string): TopicSection[] {
+    if (!text) return [{ id: 'topic-1', title: 'Response', content: text }];
+    
+    const sections: TopicSection[] = [];
+    
+    // Find all H3 headings
+    const h3Regex = /(?:^|\n)(###\s*[^\n]+)(?:\n|$)/g;
+    const matches: {title: string, index: number}[] = [];
+    let lastIndex = -1;
+    
+    let match;
+    while ((match = h3Regex.exec(text)) !== null) {
+      if (match.index > lastIndex && match[1]) {
+        matches.push({
+          title: match[1].trim(),
+          index: match.index
+        });
+        lastIndex = match.index;
+      }
+    }
+    
+    if (matches.length > 0) {
+      // Process sections based on H3 headers
+      for (let i = 0; i < matches.length; i++) {
+        const currentMatch = matches[i];
+        const nextMatch = matches[i+1];
+        
+        const title = currentMatch.title.replace(/^###\s*/, '');
+        const startIndex = currentMatch.index + currentMatch.title.length;
+        const endIndex = nextMatch ? nextMatch.index : text.length;
+        
+        // Extract content excluding the H3 header itself
+        let content = text.substring(startIndex, endIndex).trim();
+        
+        // Remove any duplicate H3 header that might be inside the content
+        content = content.replace(new RegExp(`^###\\s*${title.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*$`, 'm'), '');
+        
+        // Process quotes
+        content = processQuotes(content);
+        
+        sections.push({
+          id: `topic-${i+1}`,
+          title,
+          content
+        });
+      }
+    } else {
+      // No H3 headings found, treat as single section
+      sections.push({
+        id: 'topic-1',
+        title: 'Response',
+        content: processQuotes(text)
+      });
+    }
+    
+    return sections;
+  }
+
+  // Extract function to process quotes
+  function processQuotes(content: string): string {
+    let processedContent = content;
+    
+    // Standard quote format - "text" [source]
+    const standardQuoteRegex = /"([^"]+)"\s*\[([^\]]+)\]/g;
+    let quoteMatch;
+    
+    while ((quoteMatch = standardQuoteRegex.exec(content)) !== null) {
+      const [fullMatch, quoteText, source] = quoteMatch;
+      
+      // Extract URL if present
+      const urlPattern = /https?:\/\/[^\s\]]+/;
+      const urlMatch = source.match(urlPattern);
+      const url = urlMatch ? urlMatch[0] : '';
+      const cleanSource = source.replace(urlPattern, '').trim();
+      
+      // Replace with HTML
+      const replacement = `<div class="quote-container">
+        <div class="quote-text">${quoteText}</div>
+        <div class="quote-source" ${url ? `data-url="${url}"` : ''}>${cleanSource}</div>
+      </div>`;
+      
+      processedContent = processedContent.replace(fullMatch, replacement);
+    }
+    
+    // Custom <quote> format
+    const customQuoteRegex = /<quote source="([^"]+)">([^<]+)<\/quote>/g;
+    while ((quoteMatch = customQuoteRegex.exec(content)) !== null) {
+      const [fullMatch, source, quoteText] = quoteMatch;
+      
+      // Extract URL if present
+      const urlPattern = /\((https?:\/\/[^)]+)\)/;
+      const urlMatch = source.match(urlPattern);
+      const url = urlMatch ? urlMatch[1] : '';
+      const cleanSource = source.replace(/\s*\(https?:\/\/[^)]+\)\s*/, '').trim();
+      
+      // Replace with HTML
+      const replacement = `<div class="quote-container">
+        <div class="quote-text">${quoteText}</div>
+        <div class="quote-source" ${url ? `data-url="${url}"` : ''}>${cleanSource}</div>
+      </div>`;
+      
+      processedContent = processedContent.replace(fullMatch, replacement);
+    }
+
+    // In-text reference - simple pattern [source] 
+    // but only if NOT preceded by a quote mark
+    const inlineReferenceRegex = /(?<!")\[([^\]]+)\]/g;
+    
+    while ((quoteMatch = inlineReferenceRegex.exec(content)) !== null) {
+      const [fullMatch, source] = quoteMatch;
+      
+      // Skip if this is immediately after a quote (already processed)
+      const prevChar = content.charAt(quoteMatch.index - 1);
+      if (prevChar === '"' || prevChar === '"') continue;
+      
+      // Extract URL if present
+      const urlPattern = /https?:\/\/[^\s\]]+/;
+      const urlMatch = source.match(urlPattern);
+      const url = urlMatch ? urlMatch[0] : '';
+      const cleanSource = source.replace(urlPattern, '').trim();
+      
+      // Replace with inline reference HTML
+      const replacement = `<span class="inline-reference" ${url ? `data-url="${url}"` : ''}>${cleanSource}</span>`;
+      
+      processedContent = processedContent.replace(fullMatch, replacement);
+    }
+    
+    // Process multiple consecutive URL sources in brackets (like in the example)
+    // Only if they're not already processed
+    const multipleBracketSourcesRegex = /\[([^\]]+?)(\]\s*\[[^\]]+?)+\]/g;
+    const bracketSourcesRegex = /\[([^\]]+?)\]/g;
+
+    // Find all multi-bracket patterns
+    let multiMatch;
+    while ((multiMatch = multipleBracketSourcesRegex.exec(content)) !== null) {
+      const fullMultiMatch = multiMatch[0];
+      
+      // If this is part of a quote, skip it (already processed)
+      const prevChar = content.charAt(multiMatch.index - 1);
+      if (prevChar === '"' || prevChar === '"') continue;
+      
+      // Create wrapper for all sources
+      let sourcesHtml = '<div class="quote-sources-container">';
+      
+      // Extract individual sources
+      let bracketMatch;
+      const sourceText = fullMultiMatch;
+      while ((bracketMatch = bracketSourcesRegex.exec(sourceText)) !== null) {
+        const sourceContent = bracketMatch[1];
+        
+        // Extract URL if present
+        const urlPattern = /https?:\/\/[^\s\]]+/;
+        const urlMatch = sourceContent.match(urlPattern);
+        const url = urlMatch ? urlMatch[0] : '';
+        const cleanSource = sourceContent.replace(urlPattern, '').trim();
+        
+        // Add source div
+        sourcesHtml += `<div class="quote-source-item" ${url ? `data-url="${url}"` : ''}>${cleanSource}</div>`;
+      }
+      
+      sourcesHtml += '</div>';
+      
+      // Replace in the content
+      processedContent = processedContent.replace(fullMultiMatch, sourcesHtml);
+    }
+    
+    return processedContent;
+  }
+
+  // Function to process response data and create sections from it
+  function processResponse(response: string | TopicSection[]): void {
+    if (Array.isArray(response)) {
+      // Response is already processed into sections
+      topicSections = response;
+      
+      if (topicSections.length > 0) {
+        // Process overview/introduction - special handling
+        if (topicSections.length > 1 && 
+            (topicSections[0].title.toLowerCase().includes('introduction') || 
+             topicSections[0].title.toLowerCase().includes('overview'))) {
+          
+          // Merge intro with next section and don't include the overview title
+          if (topicSections.length > 1) {
+            const introContent = topicSections[0].content;
+            // Skip adding intro title since we want to remove "Overview"
+            
+            // Add intro content to beginning of second section with fancy styling
+            topicSections[1].content = `
+              <div class="introduction-container">
+                <div class="introduction-content">${introContent}</div>
+              </div>
+              <hr class="section-divider">
+              ${topicSections[1].content}
+            `;
+            
+            // Remove intro section
+            topicSections = topicSections.slice(1);
+          }
+        }
+        
+        isMultiTopic = topicSections.length > 1;
+        activeTopicIndex = 0;
+        
+        // Display the first topic section content
+        if (topicSections[0]?.content) {
+          resultText = topicSections[0].content;
+          AlifUI.displayFinalResult(resultText);
+        } else {
+          resultText = 'No content available.';
+          AlifUI.displayFinalResult(resultText);
+        }
+      } else {
+        isMultiTopic = false;
+        resultText = 'No content returned.';
+        AlifUI.displayFinalResult(resultText);
+      }
+    } else {
+      // Response is a string, not sections
+      resultText = response;
+      isMultiTopic = false;
+      AlifUI.displayFinalResult(resultText);
+    }
+  }
+
+  function handleResultScroll(event: Event): void {
+    if (!isMultiTopic || isLoading || !topScrollIndicator || !bottomScrollIndicator) return;
+    
+    const resultElement = event.target as HTMLElement;
+    if (!resultElement) return;
+    
+    const scrollTop = resultElement.scrollTop;
+    const scrollHeight = resultElement.scrollHeight;
+    const clientHeight = resultElement.clientHeight;
+    
+    // Show/hide top indicator based on scroll position
+    if (scrollTop > 100) {
+      topScrollIndicator.style.opacity = '0';
+    } else {
+      topScrollIndicator.style.opacity = '0.7';
+    }
+    
+    // Show/hide bottom indicator based on scroll position
+    if (scrollHeight - scrollTop - clientHeight > 100) {
+      bottomScrollIndicator.style.opacity = '0.7';
+    } else {
+      bottomScrollIndicator.style.opacity = '0';
+    }
   }
 </script>
 
@@ -247,10 +599,12 @@
 <div id="result-page" class="page" class:active={!isInputPage} 
      on:wheel={handleWheel} 
      on:touchstart={handleTouchStart} 
-     on:touchmove={handleTouchMove}>
+     on:touchmove={handleTouchMove}
+     on:keydown={handleKeyDown}
+     tabindex={!isInputPage ? 0 : -1}>
   <div class="close">
-    <button class="back-btn" on:click={goBack} disabled={isLoading}>
-      <span class="material-symbols-rounded">close</span>
+    <button class="back-btn" on:click={goBack} disabled={isLoading} aria-label="Close response and return to input">
+      <span class="material-symbols-rounded">arrow_back</span>
     </button>
   </div>
   
@@ -258,8 +612,15 @@
     <div class="topic-navigation">
       {#if topicSections && Array.isArray(topicSections)}
         {#each topicSections as section, i}
-          {#if section && typeof section === 'object' && section.id && section.title}
-            <div class="topic-dot" class:active={i === activeTopicIndex} on:click={() => navigateToTopic(i)}>
+          {#if section && typeof section === 'object' && section.title}
+            <div 
+              class="topic-dot" 
+              class:active={i === activeTopicIndex} 
+              on:click={() => navigateToTopic(i)} 
+              role="button" 
+              tabindex="0"
+              aria-label="Navigate to topic {i+1}: {section.title}"
+            >
               <span class="dot-label">{i + 1}</span>
               <span class="dot-tooltip">{section.title}</span>
             </div>
@@ -267,34 +628,19 @@
         {/each}
       {/if}
     </div>
-    
-    <div class="topic-header">
-      <h2>{topicSections && Array.isArray(topicSections) && activeTopicIndex >= 0 && activeTopicIndex < topicSections.length ? (topicSections[activeTopicIndex]?.title || 'Section') : 'Section'}</h2>
-      <div class="topic-indicator">
-        <span>{activeTopicIndex + 1}/{topicSections && Array.isArray(topicSections) ? topicSections.length : 1}</span>
-      </div>
-    </div>
   {/if}
   
   <div class="container">
-    <div id="result-text" class:multi-topic={isMultiTopic}>
-      {#if isMultiTopic}
-        {#if topicSections && topicSections.length > 0 && activeTopicIndex >= 0 && activeTopicIndex < topicSections.length}
-          {@html marked(topicSections[activeTopicIndex]?.content || 'No content available', { 
-            breaks: true, 
-            gfm: true
-          })}
-        {:else}
-          <div class="error-message">Error loading content. Please try again.</div>
-        {/if}
-      {:else if resultText.includes('<div class="quote-container">')}
-        {@html marked(resultText, { 
-          breaks: true, 
-          gfm: true
-        })}
-      {:else}
-        {resultText}
-      {/if}
+    {#if isMultiTopic && !isLoading}
+      <div class="section-title-header">
+        <h2 class="section-title">
+          {topicSections[activeTopicIndex]?.title || 'Section'}
+        </h2>
+      </div>
+    {/if}
+    
+    <div id="result-text" class:multi-topic={isMultiTopic} class:with-sections={isMultiTopic} class:hidden={isLoading}>
+      <!-- Content will be rendered by AlifUI.displayFinalResult -->
     </div>
     
     {#if isLoading}
@@ -309,23 +655,68 @@
         </div>
         <div class="status-text">{resultText}</div>
       </div>
+      
+      <div class="content-placeholder">
+        <div class="placeholder-title"></div>
+        <div class="placeholder-paragraph">
+          <div class="placeholder-line"></div>
+          <div class="placeholder-line"></div>
+          <div class="placeholder-line"></div>
+          <div class="placeholder-line"></div>
+        </div>
+        <div class="placeholder-quote"></div>
+        <div class="placeholder-paragraph">
+          <div class="placeholder-line"></div>
+          <div class="placeholder-line"></div>
+          <div class="placeholder-line"></div>
+        </div>
+        <div class="placeholder-title small"></div>
+        <div class="placeholder-paragraph">
+          <div class="placeholder-line"></div>
+          <div class="placeholder-line"></div>
+          <div class="placeholder-line"></div>
+          <div class="placeholder-line"></div>
+        </div>
+      </div>
     {/if}
     
     {#if isMultiTopic && !isLoading}
       <div class="swipe-indicators">
         {#if topicSections && Array.isArray(topicSections) && activeTopicIndex > 0}
-          <div class="swipe-up" on:click={() => navigateToTopic(activeTopicIndex - 1)}>
-            <span class="material-symbols-rounded">expand_less</span>
+          <div class="swipe-up" on:click={() => navigateToTopic(activeTopicIndex - 1)}
+               role="button" tabindex="0" aria-label="Navigate to previous section">
+            <span class="material-symbols-rounded">expand_circle_up</span>
             <span class="swipe-text">Previous: {(topicSections[activeTopicIndex - 1]?.title || 'Previous Section').substr(0, 30)}{topicSections[activeTopicIndex - 1]?.title?.length > 30 ? '...' : ''}</span>
           </div>
         {/if}
         
         {#if topicSections && Array.isArray(topicSections) && activeTopicIndex < topicSections.length - 1}
-          <div class="swipe-down" on:click={() => navigateToTopic(activeTopicIndex + 1)}>
+          <div class="swipe-down" on:click={() => navigateToTopic(activeTopicIndex + 1)}
+               role="button" tabindex="0" aria-label="Navigate to next section">
             <span class="swipe-text">Next: {(topicSections[activeTopicIndex + 1]?.title || 'Next Section').substr(0, 30)}{topicSections[activeTopicIndex + 1]?.title?.length > 30 ? '...' : ''}</span>
-            <span class="material-symbols-rounded">expand_more</span>
+            <span class="material-symbols-rounded">expand_circle_down</span>
           </div>
         {/if}
+      </div>
+      
+      <div class="scroll-indicator top" class:hidden={activeTopicIndex === 0} bind:this={topScrollIndicator}>
+        <div class="scroll-arrow">
+          <span class="material-symbols-rounded">arrow_upward</span>
+        </div>
+        <div class="scroll-text">Scroll to top to go to previous section</div>
+      </div>
+      
+      <div class="scroll-indicator bottom" class:hidden={activeTopicIndex === topicSections.length - 1} bind:this={bottomScrollIndicator}>
+        <div class="scroll-text">Scroll to bottom to go to next section</div>
+        <div class="scroll-arrow">
+          <span class="material-symbols-rounded">arrow_downward</span>
+        </div>
+      </div>
+    {/if}
+
+    {#if isMultiTopic && !isLoading}
+      <div class="topic-indicator-label" style="position: fixed; top: 20px; right: 60px; background: rgba(0,0,0,0.1); padding: 5px 10px; border-radius: 20px; font-size: 14px; z-index: 10;">
+        <span>{activeTopicIndex + 1}/{topicSections.length}</span>
       </div>
     {/if}
   </div>
@@ -376,14 +767,13 @@
   .container {
     position: relative;
     min-width: 95%;
-    margin: 0 auto;
+    margin: 0 auto 0 40px;
     height: 100vh;
-    margin-left: 40px;
     display: flex;
     flex-direction: column;
     justify-content: flex-start;
     align-items: left;
-    padding-top: 80px; /* Space for the close button */
+    padding-top: 80px;
     overflow: hidden;
   }
 
@@ -400,8 +790,10 @@
   .hidden {
     opacity: 0 !important;
     visibility: hidden !important;
+    display: none !important;
   }
 
+  /* Input styles */
   #prompt-input {
     position: absolute;
     top: 45%;
@@ -409,7 +801,8 @@
     transform: translateY(0);
     transition: all 0.5s ease;
     font-family: 'Onest', sans-serif;
-    width: 100%;
+    width: 90%;
+    max-width: 90%;
     padding: 15px;
     background: transparent;
     border: none;
@@ -417,10 +810,12 @@
     font-size: 3rem;
     margin-bottom: 20px;
     resize: vertical;
-    display: inline-block;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    display: block;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+    max-height: 60vh;
+    overflow-y: auto;
   }
 
   #prompt-input:focus {
@@ -430,10 +825,6 @@
   #prompt-input.modified {
     top: 50%;
     transform: translateY(-50%);
-    display: block;
-    white-space: normal;
-    width: 100%;
-    resize: vertical;
     font-size: 7rem;
   }
 
@@ -448,24 +839,41 @@
     transition: all 0.5s;
   }
 
+  /* Back button */
   .close {
     position: absolute;
     top: 0;
     left: 0;
-    margin-left: 40px;
-    margin-top: 40px;
+    margin: 40px 0 0 40px;
     z-index: 10;
   }
 
   .back-btn {
-    background: none;
+    background: rgba(0, 0, 0, 0.05);
     border: none;
+    border-radius: 50%;
     cursor: pointer;
-    padding: 8px;
+    padding: 10px;
     color: #000;
-    font-size: 1.5em;
+    width: 45px;
+    height: 45px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s ease;
+  }
+  
+  .back-btn:hover {
+    background: rgba(0, 0, 0, 0.1);
+    transform: scale(1.05);
+  }
+  
+  .back-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
   }
 
+  /* Result text */
   #result-text {
     flex: 1;
     width: 100%;
@@ -476,6 +884,25 @@
     line-height: 1.6;
     color: #000;
     position: relative;
+    transition: opacity 0.3s ease;
+  }
+
+  /* Make headings larger and more prominent */
+  :global(#result-text h3) {
+    font-size: 3rem;
+    margin-top: 2rem;
+    margin-bottom: 1.5rem;
+    font-weight: 600;
+    color: #000;
+    border-bottom: 2px solid rgba(0, 0, 0, 0.1);
+    padding-bottom: 0.5rem;
+  }
+
+  :global(#result-text h4) {
+    font-size: 2.5rem;
+    margin-top: 1.5rem;
+    margin-bottom: 1rem;
+    font-weight: 500;
   }
 
   #result-text::-webkit-scrollbar {
@@ -495,77 +922,145 @@
     background: #333;
   }
 
-  .final-response {
-    width: 100%;
-    max-width: 100%;
+  #result-text.multi-topic {
+    padding-top: 20px;
+    transition: opacity 0.3s ease;
+    overflow-y: auto;
+    height: calc(100vh - 100px);
+  }
+  
+  #result-text.with-sections {
+    height: calc(100vh - 140px);
+    padding-top: 20px;
+    padding-bottom: 80px;
+    opacity: 1;
   }
 
-  .final-response h1,
-  .final-response h2,
-  .final-response h3,
-  .final-response h4,
-  .final-response h5,
-  .final-response h6 {
-    margin-top: 2em;
-    margin-bottom: 1em;
-    font-weight: 700;
+  /* Topic navigation */
+  .topic-navigation {
+    position: fixed;
+    right: 20px;
+    top: 50%;
+    transform: translateY(-50%);
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+    z-index: 100;
+    background: rgba(255, 248, 231, 0.5);
+    padding: 10px 5px;
+    border-radius: 30px;
+    backdrop-filter: blur(5px);
+    box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+    border: 1px solid rgba(0, 0, 0, 0.1);
   }
 
-  .final-response p {
-    margin-bottom: 1.5em;
+  .topic-dot {
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    background: rgba(0, 0, 0, 0.2);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    position: relative;
+    transition: all 0.3s ease;
   }
 
-  .final-response ul,
-  .final-response ol {
-    margin-bottom: 1.5em;
-    padding-left: 2em;
-  }
-
-  .final-response li {
-    margin-bottom: 0.5em;
-  }
-
-  .final-response blockquote {
-    border-left: 4px solid #000;
-    padding-left: 1em;
-    margin: 1.5em 0;
-    font-style: italic;
-  }
-
-  .final-response code {
+  .topic-dot.active {
     background: #000;
+    transform: scale(1.2);
+    box-shadow: 0 0 10px rgba(0, 0, 0, 0.3);
+  }
+
+  .dot-label {
+    color: rgba(255, 255, 255, 0.8);
+    font-size: 12px;
+    font-weight: bold;
+  }
+
+  .topic-dot.active .dot-label {
     color: #fff8e7;
-    padding: 0.2em 0.4em;
-    border-radius: 3px;
-    font-family: 'Chivo Mono', monospace;
   }
 
-  .final-response pre {
-    background: #000;
-    color: #fff8e7;
-    padding: 1em;
-    border-radius: 4px;
-    overflow-x: auto;
-    margin: 1.5em 0;
-  }
-
-  .final-response pre code {
-    background: none;
-    padding: 0;
-  }
-
-  .generation-indicator {
+  .dot-tooltip {
     position: absolute;
+    right: 40px;
+    background: rgba(0, 0, 0, 0.8);
+    color: #fff;
+    padding: 5px 10px;
+    border-radius: 4px;
+    font-size: 14px;
+    opacity: 0;
+    visibility: hidden;
+    transition: all 0.3s ease;
+    pointer-events: none;
+    white-space: nowrap;
+    max-width: 200px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .topic-dot:hover .dot-tooltip {
+    opacity: 1;
+    visibility: visible;
+  }
+
+  /* Swipe indicators */
+  .swipe-indicators {
+    position: fixed;
+    left: 20px;
+    bottom: 20px;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+    pointer-events: none;
+    z-index: 50;
+    max-width: 300px;
+  }
+
+  .swipe-up, .swipe-down {
+    background: rgba(0, 0, 0, 0.1);
+    padding: 8px 16px;
+    border-radius: 25px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+    pointer-events: auto;
+    transition: all 0.2s ease;
+    backdrop-filter: blur(5px);
+    max-width: 80%;
+  }
+
+  .swipe-up:hover, .swipe-down:hover {
+    background: rgba(0, 0, 0, 0.2);
+    transform: scale(1.05);
+  }
+
+  .swipe-text {
+    font-size: 14px;
+    max-width: calc(100% - 30px);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  /* Loading animation */
+  .generation-indicator {
+    position: fixed;
     bottom: 0;
     left: 0;
     width: 100%;
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 2rem;
+    gap: 1rem;
     z-index: 100;
     background: linear-gradient(to top, rgba(255, 248, 231, 1) 0%, rgba(255, 248, 231, 0.95) 40%, rgba(255, 248, 231, 0.7) 80%, rgba(255, 248, 231, 0) 100%);
-    padding: 4rem 2rem;
+    padding: 2rem;
+    pointer-events: none;
   }
 
   .galaxy-loader {
@@ -637,6 +1132,268 @@
     animation-delay: 1.2s;
   }
 
+  .status-text {
+    font-family: 'Onest', sans-serif;
+    font-size: 1.4rem;
+    color: #000;
+    opacity: 0.8;
+    text-align: center;
+    max-width: 600px;
+    line-height: 1.4;
+  }
+
+  /* Content placeholder */
+  .content-placeholder {
+    position: relative;
+    width: 100%;
+    max-width: 95%;
+    margin: 0 auto;
+    padding: 2rem;
+    height: auto;
+    z-index: 1;
+    margin-bottom: 150px;
+    margin-top: 20px;
+    min-height: 60vh;
+    display: flex;
+    flex-direction: column;
+  }
+  
+  .placeholder-title,
+  .placeholder-line,
+  .placeholder-quote {
+    background: linear-gradient(
+      to right,
+      rgba(0, 0, 0, 0.05) 8%,
+      rgba(0, 0, 0, 0.08) 18%,
+      rgba(0, 0, 0, 0.05) 33%
+    );
+    background-size: 2000px 100%;
+    animation: placeholder-shimmer 2s linear infinite;
+    border-radius: 4px;
+    margin-bottom: 1rem;
+  }
+  
+  .placeholder-title {
+    height: 2.5rem;
+    width: 60%;
+    margin-bottom: 2rem;
+  }
+  
+  .placeholder-title.small {
+    height: 2rem;
+    width: 40%;
+    margin-top: 2rem;
+  }
+  
+  .placeholder-paragraph {
+    margin-bottom: 2rem;
+  }
+  
+  .placeholder-line {
+    height: 1.2rem;
+    margin-bottom: 0.8rem;
+    width: 100%;
+  }
+  
+  .placeholder-line:nth-child(even) {
+    width: 92%;
+  }
+  
+  .placeholder-line:nth-child(3) {
+    width: 97%;
+  }
+  
+  .placeholder-line:last-child {
+    width: 85%;
+  }
+  
+  .placeholder-quote {
+    height: 8rem;
+    margin: 2rem 0;
+    border-radius: 8px;
+    border-left: 4px solid rgba(0, 0, 0, 0.1);
+  }
+
+  /* Quote styling */
+  :global(.quote-container) {
+    margin: 2rem 0;
+    padding: 1.5rem;
+    background-color: rgba(0, 0, 0, 0.03);
+    border-radius: 12px;
+    border-left: 5px solid rgba(0, 0, 0, 0.2);
+    overflow: hidden;
+    transition: all 0.2s ease;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+  }
+  
+  :global(.quote-container:hover) {
+    background-color: rgba(0, 0, 0, 0.05);
+    transform: translateX(2px);
+    box-shadow: 0 3px 12px rgba(0, 0, 0, 0.08);
+  }
+  
+  /* Special styling for different quote types */
+  :global(.quote-container[data-quote-type="quran"]) {
+    background-color: rgba(0, 70, 0, 0.03);
+    border-left: 5px solid rgba(0, 70, 0, 0.3);
+  }
+  
+  :global(.quote-container[data-quote-type="quran"] .quote-source) {
+    background-color: rgba(0, 70, 0, 0.08);
+    color: rgba(0, 70, 0, 0.9);
+  }
+  
+  :global(.quote-container[data-quote-type="ruling"]) {
+    background-color: rgba(70, 0, 0, 0.03);
+    border-left: 5px solid rgba(70, 0, 0, 0.3);
+  }
+  
+  :global(.quote-container[data-quote-type="ruling"] .quote-source) {
+    background-color: rgba(70, 0, 0, 0.08);
+    color: rgba(70, 0, 0, 0.9);
+  }
+  
+  :global(.quote-container[data-quote-type="hadith"]) {
+    background-color: rgba(0, 0, 70, 0.03);
+    border-left: 5px solid rgba(0, 0, 70, 0.3);
+  }
+  
+  :global(.quote-container[data-quote-type="hadith"] .quote-source) {
+    background-color: rgba(0, 0, 70, 0.08);
+    color: rgba(0, 0, 70, 0.9);
+  }
+  
+  :global(.quote-source) {
+    font-weight: 500;
+    margin-top: 1rem;
+    padding: 6px 12px;
+    background: rgba(0, 0, 0, 0.05);
+    border-radius: 8px;
+    display: inline-block;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    font-size: 0.9em;
+    border-left: 3px solid rgba(0, 0, 0, 0.1);
+  }
+  
+  :global(.quote-source[data-url]) {
+    text-decoration: none;
+    padding-right: 30px;
+    background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>');
+    background-repeat: no-repeat;
+    background-position: right 10px center;
+    background-size: 14px;
+  }
+  
+  :global(.quote-source:hover) {
+    background-color: rgba(0, 0, 0, 0.1);
+    transform: translateX(2px);
+  }
+  
+  :global(.quote-text) {
+    font-style: italic;
+    line-height: 1.6;
+    position: relative;
+    display: block;
+    transition: color 0.2s ease;
+    margin-bottom: 0.8rem;
+    font-size: 1.1em;
+    color: rgba(0, 0, 0, 0.8);
+    padding-left: 5px;
+  }
+  
+  :global(.quote-text.clickable-title) {
+    text-decoration: none;
+    padding-right: 0;
+  }
+  
+  :global(.quote-text.clickable-title:after) {
+    display: none;
+  }
+  
+  :global(.quote-text.clickable-title:hover) {
+    color: rgba(0, 0, 0, 0.7);
+  }
+
+  :global(.quote-sources-container) {
+    margin: 1rem 0;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    padding: 0.5rem;
+    background-color: rgba(0, 0, 0, 0.02);
+    border-radius: 8px;
+    border-left: 3px solid rgba(0, 0, 0, 0.1);
+  }
+
+  :global(.quote-source-item) {
+    font-size: 0.9em;
+    display: inline-flex;
+    align-items: center;
+    background: rgba(0, 0, 0, 0.05);
+    padding: 4px 10px;
+    border-radius: 6px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+
+  :global(.quote-source-item:hover) {
+    background: rgba(0, 0, 0, 0.1);
+  }
+
+  :global(.quote-source-item[data-url]) {
+    padding-right: 28px;
+    background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>');
+    background-repeat: no-repeat;
+    background-position: right 8px center;
+    background-size: 12px;
+  }
+  
+  /* Ensure blockquotes are styled like quotes */
+  :global(blockquote) {
+    margin: 2rem 0;
+    padding: 1.5rem;
+    background-color: rgba(0, 0, 0, 0.03);
+    border-radius: 12px;
+    border-left: 5px solid rgba(0, 0, 0, 0.2);
+    font-style: italic;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+  }
+
+  /* Introduction styling */
+  .introduction-container {
+    background-color: rgba(0, 0, 0, 0.035);
+    border-radius: 12px;
+    padding: 1.5rem;
+    margin-bottom: 2rem;
+    border-left: 4px solid rgba(0, 0, 0, 0.15);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+  }
+
+  .introduction-title {
+    font-weight: 600;
+    font-size: 1.2em;
+    margin-bottom: 0.8rem;
+    color: rgba(0, 0, 0, 0.8);
+    padding-bottom: 0.5rem;
+    border-bottom: 1px solid rgba(0, 0, 0, 0.1);
+  }
+
+  .introduction-content {
+    font-style: italic;
+    line-height: 1.6;
+    color: rgba(0, 0, 0, 0.7);
+  }
+
+  .section-divider {
+    border: none;
+    height: 1px;
+    background: rgba(0, 0, 0, 0.1);
+    margin: 2.5rem 0;
+  }
+
+  /* Animations */
   @keyframes galaxy-rotate {
     0% { transform: rotate(0deg); }
     100% { transform: rotate(360deg); }
@@ -663,28 +1420,24 @@
       opacity: 1;
     }
   }
-
-  .status-text {
-    font-family: 'Onest', sans-serif;
-    font-size: 1.4rem;
-    color: #000;
-    opacity: 0.8;
-    text-align: center;
-    max-width: 600px;
-    line-height: 1.4;
+  
+  @keyframes placeholder-shimmer {
+    0% { background-position: -1000px 0; }
+    100% { background-position: 1000px 0; }
   }
 
-  /* Mobile responsiveness */
+  /* Media queries */
   @media (max-width: 768px) {
     .container {
-      margin-left: 20px;
-      margin-right: 20px;
+      margin: 0 20px 0 20px;
       width: auto;
       padding-top: 60px;
     }
 
-    #prompt-input {
+    #prompt-input, #prompt-input.modified {
       font-size: 2rem;
+      width: 90%;
+      max-width: 90%;
     }
 
     #prompt-input.modified {
@@ -697,6 +1450,14 @@
       padding: 1rem;
     }
 
+    :global(#result-text h3) {
+      font-size: 2.3rem;
+    }
+
+    :global(#result-text h4) {
+      font-size: 1.8rem;
+    }
+
     #typing-tip {
       margin-left: 20px;
       margin-bottom: 20px;
@@ -704,10 +1465,23 @@
     }
 
     .close {
-      margin-left: 20px;
-      margin-top: 20px;
+      margin: 20px 0 0 20px;
     }
 
+    .topic-navigation {
+      right: 10px;
+      padding: 5px 3px;
+    }
+    
+    .swipe-indicators {
+      bottom: 10px;
+    }
+    
+    .swipe-up, .swipe-down {
+      padding: 6px 12px;
+      max-width: 90%;
+    }
+    
     .generation-indicator {
       padding: 3rem 1.5rem;
     }
@@ -735,7 +1509,7 @@
   }
 
   @media (max-width: 480px) {
-    #prompt-input {
+    #prompt-input, #prompt-input.modified {
       font-size: 1.5rem;
     }
 
@@ -746,6 +1520,28 @@
     #result-text {
       font-size: 1.2rem;
       padding: 0.8rem;
+    }
+
+    :global(#result-text h3) {
+      font-size: 1.8rem;
+    }
+    
+    :global(#result-text h4) {
+      font-size: 1.5rem;
+    }
+    
+    #result-text.with-sections {
+      padding-top: 20px;
+      padding-bottom: 60px;
+    }
+    
+    .topic-navigation {
+      padding: 5px 2px;
+    }
+    
+    .topic-dot {
+      width: 25px;
+      height: 25px;
     }
 
     .generation-indicator {
@@ -774,202 +1570,190 @@
     }
   }
 
-  .topic-navigation {
-    position: fixed;
-    right: 20px;
-    top: 50%;
-    transform: translateY(-50%);
-    display: flex;
-    flex-direction: column;
-    gap: 15px;
-    z-index: 100;
-  }
-
-  .topic-dot {
-    width: 30px;
-    height: 30px;
-    border-radius: 50%;
-    background: rgba(0, 0, 0, 0.2);
-    display: flex;
-    align-items: center;
-    justify-content: center;
+  /* Clickable titles */
+  :global(.clickable-title) {
     cursor: pointer;
     position: relative;
-    transition: all 0.3s ease;
+    display: inline-block;
+    padding-right: 24px;
+    text-decoration: underline;
+    text-decoration-style: dotted;
+    text-underline-offset: 3px;
+    transition: all 0.2s ease;
   }
-
-  .topic-dot.active {
-    background: #000;
-    transform: scale(1.2);
-  }
-
-  .dot-label {
-    color: rgba(255, 255, 255, 0.8);
-    font-size: 12px;
-    font-weight: bold;
-  }
-
-  .topic-dot.active .dot-label {
-    color: #fff8e7;
-  }
-
-  .dot-tooltip {
+  
+  :global(.clickable-title:after) {
+    content: '';
     position: absolute;
-    right: 40px;
-    background: rgba(0, 0, 0, 0.8);
-    color: #fff;
-    padding: 5px 10px;
-    border-radius: 4px;
-    font-size: 14px;
-    opacity: 0;
-    visibility: hidden;
-    transition: all 0.3s ease;
-    pointer-events: none;
-    white-space: nowrap;
-    max-width: 200px;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    right: 0;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 16px;
+    height: 16px;
+    background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>');
+    background-repeat: no-repeat;
+    background-position: center;
+    background-size: contain;
+  }
+  
+  :global(.clickable-title:hover) {
+    color: rgba(0, 0, 0, 0.7);
   }
 
-  .topic-dot:hover .dot-tooltip {
-    opacity: 1;
-    visibility: visible;
-  }
-
-  .topic-header {
-    position: absolute;
-    top: 40px;
-    left: 80px;
-    right: 80px;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    z-index: 5;
-  }
-
-  .topic-header h2 {
-    margin: 0;
-    font-size: 2rem;
-    font-weight: 300;
-  }
-
-  .topic-indicator {
-    background: rgba(0, 0, 0, 0.1);
-    padding: 5px 12px;
-    border-radius: 20px;
-    font-size: 14px;
-  }
-
-  #result-text.multi-topic {
-    padding-top: 60px;
-    transition: opacity 0.3s ease;
-  }
-
-  .swipe-indicators {
-    position: fixed;
+  /* Section title header */
+  .section-title-header {
+    position: relative;
+    top: 0;
     left: 0;
     right: 0;
-    bottom: 30px;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 20px;
+    padding: 10px 0 20px 0;
+    background: transparent;
+    z-index: 50;
+    margin-bottom: 20px;
     pointer-events: none;
+    text-align: left;
   }
 
-  .swipe-up, .swipe-down {
-    background: rgba(0, 0, 0, 0.1);
-    padding: 10px 20px;
+  .section-title {
+    font-size: 3.5rem;
+    font-weight: 600;
+    color: #000;
+    margin: 0;
+    padding: 0;
+    line-height: 1.2;
+    text-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    opacity: 0.9;
+  }
+  
+  @media (max-width: 768px) {
+    .section-title {
+      font-size: 2.5rem;
+    }
+  }
+  
+  @media (max-width: 480px) {
+    .section-title {
+      font-size: 2rem;
+    }
+  }
+
+  /* Scroll indicators */
+  .scroll-indicator {
+    position: fixed;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(0, 0, 0, 0.05);
+    padding: 8px 16px;
     border-radius: 25px;
     display: flex;
     align-items: center;
     gap: 8px;
-    cursor: pointer;
-    pointer-events: auto;
-    transition: all 0.2s ease;
+    z-index: 30;
+    pointer-events: none;
+    transition: all 0.3s ease;
+    opacity: 0.7;
+    backdrop-filter: blur(5px);
   }
-
-  .swipe-up:hover, .swipe-down:hover {
-    background: rgba(0, 0, 0, 0.2);
+  
+  .scroll-indicator.top {
+    top: 100px;
   }
-
-  .swipe-text {
+  
+  .scroll-indicator.bottom {
+    bottom: 20px;
+  }
+  
+  .scroll-text {
     font-size: 14px;
+    color: rgba(0, 0, 0, 0.7);
+    font-weight: 500;
   }
-
-  /* Mobile responsiveness for multi-topic display */
+  
+  .scroll-arrow {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  
+  .scroll-indicator.top .scroll-arrow,
+  .scroll-indicator.bottom .scroll-arrow {
+    animation: bounce 2s infinite;
+  }
+  
+  @keyframes bounce {
+    0%, 20%, 50%, 80%, 100% {
+      transform: translateY(0);
+    }
+    40% {
+      transform: translateY(-10px);
+    }
+    60% {
+      transform: translateY(-5px);
+    }
+  }
+  
   @media (max-width: 768px) {
-    .topic-navigation {
-      right: 10px;
-    }
-
-    .topic-dot {
-      width: 25px;
-      height: 25px;
-    }
-
-    .topic-header {
-      left: 60px;
-      right: 60px;
-      top: 30px;
-    }
-
-    .topic-header h2 {
-      font-size: 1.5rem;
+    .scroll-indicator {
+      padding: 6px 12px;
+      max-width: 90%;
     }
     
-    #result-text.multi-topic {
-      padding-top: 80px;
+    .scroll-text {
+      font-size: 12px;
+    }
+    
+    .scroll-indicator.top {
+      top: 80px;
     }
   }
-
+  
   @media (max-width: 480px) {
-    .topic-header {
-      left: 50px;
-      right: 50px;
-      flex-direction: column;
-      align-items: flex-start;
-      gap: 10px;
+    .scroll-indicator {
+      padding: 5px 10px;
     }
     
-    .topic-header h2 {
-      font-size: 1.3rem;
+    .scroll-text {
+      font-size: 11px;
     }
     
-    .topic-navigation {
-      opacity: 0.5;
-    }
-    
-    .topic-navigation:hover {
-      opacity: 1;
-    }
-    
-    #result-text.multi-topic {
-      padding-top: 100px;
+    .scroll-indicator.top {
+      top: 70px;
     }
   }
 
-  /* Add styling for our custom quote format */
-  .quote-container {
-    margin: 2rem 0;
-    padding: 1rem;
-    background-color: rgba(0, 0, 0, 0.03);
-    border-radius: 8px;
-    overflow: hidden;
+  /* In-text reference styling */
+  :global(.inline-reference) {
+    display: inline-flex;
+    align-items: center;
+    background: rgba(0, 0, 0, 0.05);
+    border-radius: 20px;
+    padding: 3px 10px;
+    margin: 0 3px;
+    font-size: 0.8em;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    white-space: nowrap;
+    border-left: 3px solid rgba(0, 0, 0, 0.1);
   }
-
-  .quote-source {
-    font-weight: bold;
-    margin-bottom: 0.5rem;
-    font-size: 0.9em;
-    color: #000;
+  
+  :global(.inline-reference:hover) {
+    background: rgba(0, 0, 0, 0.1);
+    transform: translateY(-1px);
   }
-
-  .quote-text {
-    opacity: 0.5;
-    font-style: italic;
-    padding: 0.5rem 0 0 1.5rem;
-    border-left: 3px solid rgba(0, 0, 0, 0.2);
-    line-height: 1.6;
+  
+  :global(.inline-reference[data-url]) {
+    padding-right: 25px;
+    background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>');
+    background-repeat: no-repeat;
+    background-position: right 8px center;
+    background-size: 12px;
+  }
+  
+  /* For mobile screens, make them wrap */
+  @media (max-width: 480px) {
+    :global(.inline-reference) {
+      white-space: normal;
+      display: inline-block;
+    }
   }
 </style>

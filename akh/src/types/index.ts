@@ -30,6 +30,7 @@ export interface SearchResult {
 export interface Quote {
   text: string;
   source: string;
+  url?: string;
 }
 
 export interface GeminiResponse {

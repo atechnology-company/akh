@@ -81,7 +81,7 @@
     let touchTimeout: NodeJS.Timeout;
     let isFirstVisit = true; // Track whether this is the first visit
 
-    $: showScrollNote = !isFullscreen && !isMobile;
+    $: showScrollNote = isFirstVisit; // Always show for first-time visitors regardless of mode
 
     // Get bezels from parent component
     let containerHeight = '100%';
@@ -219,6 +219,14 @@
         
         isTransitioning = true;
         
+        // Remember there was a scroll note
+        const hadScrollNote = showScrollNote;
+        
+        // Temporarily hide scroll note during transition
+        if (hadScrollNote) {
+            showScrollNote = false;
+        }
+        
         // Step 1: Fade out completely
         fadeState = "fading-out";
         
@@ -238,6 +246,13 @@
                     setTimeout(() => {
                         fadeState = "visible";
                         isTransitioning = false;
+                        
+                        // Restore scroll note if needed
+                        if (hadScrollNote) {
+                            setTimeout(() => {
+                                showScrollNote = true;
+                            }, 300); // Add slight delay before showing the note again
+                        }
                     }, 400);
                 }, 50);
             }, 50);
@@ -547,7 +562,7 @@
         {/if}
     </div>
     {#if showScrollNote && isFirstVisit}
-        <div class="scroll-note" transition:fade|local={{duration: 500}}>
+        <div class="scroll-note" transition:fade={{duration: 500}}>
             {#if !isFullscreen}
                 <span class="swipe-icon">⬆️</span>
                 <span class="swipe-text">{t('scroll_to_see')}</span>
@@ -1255,16 +1270,17 @@
     }
 
     .scroll-note {
-        position: absolute;
+        position: fixed;
         bottom: 20px;
         right: 20px;
-        background-color: rgba(0, 0, 0, 0.7);
+        background-color: rgba(0, 0, 0, 0.85);
         color: white;
         padding: 10px 15px;
         border-radius: 5px;
         transition: opacity 0.5s ease;
         opacity: 1;
-        z-index: 1000;
+        z-index: 2000;
+        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.5);
     }
     
     .layout.mobile .scroll-note {

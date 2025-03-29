@@ -9,22 +9,12 @@ const config = {
 
 	kit: {
 		adapter: adapter({
-			// Split the edge function into multiple smaller functions
-			split: true,
+			// Use static adapter mode for Netlify
+			edge: false,
+			split: false,
 			
-			// Configure function options
-			edge: false, // Use regular Netlify Functions instead of Edge Functions
-			
-			// Configure function runtime - exclude large libraries from bundle
-			externals: [
-				'@huggingface/transformers',
-				'@nativescript/core',
-				'@nativescript/geolocation',
-				'marked'
-			],
-			
-			// Function output directory
-			functionDirectory: 'functions',
+			// Set fallback to SPA mode
+			fallback: 'index.html',
 			
 			// Set the output directory to 'build' to match netlify.toml
 			out: 'build'
