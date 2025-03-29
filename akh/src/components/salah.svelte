@@ -2,6 +2,7 @@
     import { onMount } from 'svelte';
     import { getPrayerData, type PrayerTimes } from '../modules/salah';
     import { t } from '$lib/i18n';
+    import { fade } from 'svelte/transition';
     
     let prayerTimes: PrayerTimes = {
         fajr: '',
@@ -545,25 +546,32 @@
             </div>
         {/if}
     </div>
-    {#if showScrollNote}
-        <div class="scroll-note" class:fade-in={showScrollNote} class:fade-out={!showScrollNote}>
-            {t('scroll_to_see')}
-        </div>
-    {/if}
-    {#if !showScrollNote && !isMobile}
-        <div class="scroll-note" class:fade-in={!showScrollNote} class:fade-out={showScrollNote}>
-            {t('scroll_again')}
+    {#if showScrollNote && isFirstVisit}
+        <div class="scroll-note" transition:fade|local={{duration: 500}}>
+            {#if !isFullscreen}
+                <span class="swipe-icon">⬆️</span>
+                <span class="swipe-text">{t('scroll_to_see')}</span>
+            {:else}
+                <span class="swipe-icon">⬇️</span>
+                <span class="swipe-text">{t('scroll_again')}</span>
+            {/if}
         </div>
     {/if}
     
     {#if isMobile && isFirstVisit}
         {#if !isFullscreen}
-            <div class="swipe-indicator up" data-hint={t('swipe_up_hint')}>
-                <div class="arrow"></div>
+            <div class="mobile-swipe-hint" transition:fade|local={{duration: 500}}>
+                <div class="swipe-indicator">
+                    <span class="swipe-arrow">↑</span>
+                </div>
+                <span class="swipe-text">{t('swipe_up_hint')}</span>
             </div>
         {:else}
-            <div class="swipe-indicator down" data-hint={t('swipe_down_hint')}>
-                <div class="arrow"></div>
+            <div class="mobile-swipe-hint down" transition:fade|local={{duration: 500}}>
+                <div class="swipe-indicator">
+                    <span class="swipe-arrow">↓</span>
+                </div>
+                <span class="swipe-text">{t('swipe_down_hint')}</span>
             </div>
         {/if}
     {/if}

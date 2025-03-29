@@ -1,4 +1,3 @@
-import { pipeline, TextStreamer } from '@huggingface/transformers';
 import { TextRank } from '../modules/textrank';
 import type { 
     Config, 
@@ -6,7 +5,8 @@ import type {
     Quote, 
     GeminiResponse, 
     Tokenizer, 
-    CallbackFunction 
+    CallbackFunction,
+    TopicSection
 } from '../types/index';
 
 // Get environment variables from window.__ENV__ or use empty strings as fallback
@@ -27,32 +27,6 @@ const ASSISTANT_PROMPT = `You are a helpful AI assistant. Please:
    - Direct quotes from sources
    - Summarized information
    - General guidance based on provided information`;
-
-let summarizer: any;
-
-// Initialize the pipeline and assign generator globally
-export async function initializePipeline() {
-    try {
-        console.log('Initializing summarizer model');
-        summarizer = await pipeline(
-            "summarization",
-            "Xenova/bart-large-cnn", // Smaller BART model
-            { 
-                dtype: "fp32",
-                device: "webgpu"
-            }
-        );
-        console.log('Summarizer initialized');
-    } catch (error) {
-        console.error('Factory failed to start:', error);
-        throw error;
-    }
-}
-
-// Only initialize if we're in the browser
-if (typeof window !== 'undefined') {
-    initializePipeline();
-}
 
 // Function to detect if text is Arabic
 function isArabic(text: string): boolean {
@@ -100,62 +74,31 @@ function buildSearchQuery(query: string, definitionMode = false): string {
   return query.trim();
 }
 
-// Summarize content function 
-async function summarizeContent(content: string, quotes: Array<Quote>): Promise<string> {
+// Summarize content function - simplified to skip summarization
+async function processContent(content: string, quotes: Array<Quote>): Promise<string> {
     try {
         if (!content || typeof content !== 'string') {
             console.error('Invalid content received:', content);
             return '';
         }
 
-        // Skip summarization for Arabic text
-        if (isArabic(content)) {
-            console.log('Arabic text detected, skipping summarization');
-            if (quotes?.length > 0) {
-                return content + '\n\nRelevant Quotes:\n' + 
-                    quotes.map(q => `"${q.text}" [${q.source}]`).join('\n');
-            }
-            return content;
-        }
-
-        // Clean and normalize content
+        // Skip summarization for all text - just clean and normalize
         let cleanContent = content
             .replace(/\s+/g, ' ')
             .replace(/[\r\n]+/g, '\n')
             .trim();
 
-        console.log('Clean content length:', cleanContent.length);
-
-        let summarized = '';
-        if (summarizer) {
-            const summary = await summarizer(cleanContent, {
-                max_length: 256,
-                min_length: 30,
-                do_sample: false
-            });
-            
-            if (summary?.[0]?.summary_text) {
-                summarized = summary[0].summary_text;
-            }
-        }
-
-        if (!summarized) {
-            // Fallback to TextRank
-            const textRank = new TextRank();
-            summarized = textRank.summarize(content, 3) || content;
-        }
-
+        // Add quotes if they exist
         if (quotes?.length > 0) {
-            summarized += '\n\nRelevant Quotes:\n' + 
+            cleanContent += '\n\nRelevant Quotes:\n' + 
                 quotes.map(q => `"${q.text}" [${q.source}]`).join('\n');
         }
 
-        return summarized;
+        return cleanContent;
 
     } catch (error) {
-        console.error('Summarization error:', error);
-        const textRank = new TextRank();
-        return textRank.summarize(content, 3) || content;
+        console.error('Content processing error:', error);
+        return content; // Return original content on error
     }
 }
 
@@ -185,7 +128,7 @@ async function optimizeQuery(query: string, definitionMode = false) {
         `;
 
     try {
-        const outputText = await generateWithGemini(optimizationPrompt, 0.7);
+        const outputText = await generateWithGemini(optimizationPrompt, [], 2048, 0.7);
         const output = [{ generated_text: outputText }];
 
         // Extract queries
@@ -351,14 +294,15 @@ export async function searchAndFetchContent(
                                 });
                             }
 
-                            statusCallback(`Summarizing content from ${item.title}`);
+                            statusCallback(`Processing content from ${item.title}`);
 
-                            const summarizedContent = await summarizeContent(content, quotes);
-                            statusCallback(`Results from query "${query}":\n${summarizedContent}\n\n---`);
+                            // Use processContent instead of summarizeContent
+                            const processedContent = await processContent(content, quotes);
+                            statusCallback(`Results from query "${query}":\n${processedContent}\n\n---`);
 
                             webResults.push({
                                 title: item.title,
-                                content: summarizedContent,
+                                content: processedContent,
                                 quotes: quotes,
                                 url: item.link,
                                 query: query // Store which query found this result
@@ -389,20 +333,15 @@ export async function searchAndFetchContent(
             }
         }
 
-        // Create final combined summary
+        // Create final combined content (no summarization)
         if (webResults.length > 0) {
-            statusCallback(`Creating final summary from ${webResults.length} sources...`);
+            statusCallback(`Preparing information from ${webResults.length} sources...`);
 
             const combinedContent = webResults.map(result => 
-                `Source [via "${result.query}"]: ${result.title}\n${result.content}`
+                `SOURCE: "${result.title}"\nCONTENT:\n${result.content}\n---\n`
             ).join('\n\n');
             
-            const finalSummary = await summarizeContent(
-                combinedContent, 
-                webResults.flatMap(result => result.quotes)
-            );
-
-            statusCallback(`Final Combined Summary:\n${finalSummary}`);
+            statusCallback(`Content prepared and ready for analysis.`);
         }
 
         return webResults;
@@ -537,39 +476,90 @@ async function fetchWithRetry(url: string, options: RequestInit, retries: number
 }
 
 // Generate content with Gemini API
-export async function generateWithGemini(prompt: string, temperature: number = 0.7): Promise<string> {
-    const response = await fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent', {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-            'x-goog-api-key': config.GEMINI_API_KEY
-        },
-        body: JSON.stringify({
+export async function generateWithGemini(
+    prompt: string, 
+    searchResults: SearchResult[] = [], 
+    maxTokens: number = 8000,
+    temperature: number = 0.1
+): Promise<string> {
+    try {
+        // Safety check - make sure we're in a browser environment
+        if (typeof window === 'undefined' || !window.fetch) {
+            throw new Error('This function must be executed in a browser environment');
+        }
+
+        // Validate prompt
+        if (!prompt || typeof prompt !== 'string') {
+            console.error('Invalid prompt provided:', prompt);
+            throw new Error('Invalid prompt: Must provide a non-empty string');
+        }
+
+        console.log('Starting Gemini API call with prompt length:', prompt.length);
+        
+        // Set up URL and headers
+        const apiKey = 'AIzaSyDFqJZ1JPHBJwzAg_-ZLk0QhJm0j9EJTqQ'; // This is a public key
+        const url = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent';
+        
+        // Construct the web results context
+        const webResults = searchResults?.filter(r => r.title && r.content) || [];
+        
+        // Build request body
+        const requestBody = {
             contents: [{
                 parts: [{
                     text: prompt
                 }]
             }],
             generationConfig: {
+                maxOutputTokens: maxTokens,
                 temperature: temperature,
-                topK: 40,
-                topP: 0.8,
-                maxOutputTokens: 2048
+                topP: 0.95,
+                topK: 64
             }
-        })
-    });
-
-    if (!response.ok) {
-        throw new Error(`Gemini API error: ${response.status}`);
+        };
+        
+        // Make the API request with error handling
+        console.log('Sending request to Gemini API...');
+        const response = await fetch(`${url}?key=${apiKey}`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(requestBody)
+        });
+        
+        // Check for successful response
+        if (!response.ok) {
+            const errorText = await response.text();
+            console.error('Gemini API error response:', response.status, errorText);
+            throw new Error(`Error from Gemini API: ${response.status} - ${errorText || response.statusText}`);
+        }
+        
+        // Parse the response data
+        const data = await response.json();
+        
+        // Validate the response structure
+        if (!data || !data.candidates || !Array.isArray(data.candidates) || data.candidates.length === 0) {
+            console.error('Invalid Gemini API response structure (missing candidates):', data);
+            throw new Error('Invalid response from Gemini API: No candidates returned');
+        }
+        
+        const firstPart = data.candidates[0]?.content?.parts?.[0];
+        
+        if (!firstPart || typeof firstPart.text !== 'string') {
+            console.error('Invalid Gemini API response structure (no text):', firstPart);
+            throw new Error('Invalid response from Gemini API: No text in first part');
+        }
+        
+        return firstPart.text;
+    } catch (error) {
+        console.error('Error during Gemini API call:', error);
+        if (error instanceof Error) {
+            throw error;
+        } else {
+            throw new Error('Unknown error during Gemini API call');
+        }
     }
-
-    const data = await response.json();
-    
-    if (!data.candidates || data.candidates.length === 0 || !data.candidates[0].content || !data.candidates[0].content.parts || data.candidates[0].content.parts.length === 0) {
-        throw new Error('Invalid or empty response from Gemini API');
-    }
-    
-    return data.candidates[0].content.parts[0].text;
 }
 
 // Function to detect language
@@ -592,13 +582,226 @@ function detectLanguage(text: string): string {
     return 'en';
 }
 
-// Update the generateContent function to use Gemini's language capabilities
+// Function to detect if a query contains multiple questions/topics
+function detectMultiTopicQuery(query: string): boolean {
+    // Check for common patterns that indicate multiple questions
+    const patterns = [
+        // Check for numbered points
+        /\d+\s*[\.\)]\s*\w+/i,
+        // Check for bullet points
+        /[-•*]\s*\w+/i,
+        // Check for multiple question marks
+        /\?.*\?/i,
+        // Check for "and" between potential questions
+        /\?.+and.+\?/i,
+        // Check for "also" or "what about" indicating additional questions
+        /what about|also|additionally|moreover|furthermore/i,
+        // Check for separate sentences ending with question marks
+        /\?\s+[A-Z]/
+    ];
+    
+    return patterns.some(pattern => pattern.test(query));
+}
+
+// Function to process multi-topic query responses
+function organizeTopics(response: string): TopicSection[] {
+    // Ensure response is a valid string
+    if (response === null || response === undefined) {
+        console.error('Received null or undefined response');
+        return [{ 
+            id: 'error-1', 
+            title: 'Error Processing Response', 
+            content: 'There was an error processing the AI response. Please try again.' 
+        }];
+    }
+    
+    // Convert to string if not already a string
+    let responseStr: string;
+    try {
+        responseStr = String(response);
+    } catch (err) {
+        console.error('Failed to convert response to string:', err);
+        return [{ 
+            id: 'error-1', 
+            title: 'Error Processing Response', 
+            content: 'There was an error processing the AI response. Please try again.' 
+        }];
+    }
+
+    // Look for headers or key demarcations in the text
+    const sections: TopicSection[] = [];
+    
+    try {
+        // First try to identify H1 headings (# Title) which are our primary section breaks
+        const headerRegex = /(?:^|\n)(#\s+.+)(?:\n|$)/g;
+        let match;
+        
+        // Find all H1 headers
+        const headers: {title: string, index: number}[] = [];
+        while ((match = headerRegex.exec(responseStr)) !== null) {
+            if (match[1] && typeof match[1] === 'string') {
+                headers.push({
+                    title: match[1].trim(),
+                    index: match.index
+                });
+            }
+        }
+        
+        // If we found headers, use them to divide the content
+        if (headers.length > 0) {
+            for (let i = 0; i < headers.length; i++) {
+                const currentHeader = headers[i];
+                const nextHeader = headers[i+1];
+                
+                const title = currentHeader.title.replace(/^#\s+/, ''); // Remove # prefix
+                const startIndex = currentHeader.index + currentHeader.title.length;
+                const endIndex = nextHeader ? nextHeader.index : responseStr.length;
+                
+                let content = responseStr.substring(startIndex, endIndex).trim();
+                
+                // Process quotes to proper format for styling
+                content = content.replace(/<quote source="([^"]+)">([^<]+)<\/quote>/g, 
+                    '<div class="quote-container"><div class="quote-source">**$1**</div><div class="quote-text">$2</div></div>');
+                
+                sections.push({
+                    id: `topic-${i+1}`,
+                    title,
+                    content
+                });
+            }
+            
+            return sections;
+        } 
+        
+        // If no H1 headings were found, check for regular section breaks (## Title)
+        const subHeaderRegex = /(?:^|\n)(##\s+.+)(?:\n|$)/g;
+        const subHeaders: {title: string, index: number}[] = [];
+        
+        while ((match = subHeaderRegex.exec(responseStr)) !== null) {
+            if (match[1] && typeof match[1] === 'string') {
+                subHeaders.push({
+                    title: match[1].trim(),
+                    index: match.index
+                });
+            }
+        }
+        
+        if (subHeaders.length > 0) {
+            // Use subheaders as sections
+            for (let i = 0; i < subHeaders.length; i++) {
+                const currentHeader = subHeaders[i];
+                const nextHeader = subHeaders[i+1];
+                
+                if (!currentHeader.title) continue;
+                
+                const title = currentHeader.title.replace(/^##\s+/, ''); // Remove ## prefix
+                const startIndex = currentHeader.index + currentHeader.title.length;
+                const endIndex = nextHeader ? nextHeader.index : responseStr.length;
+                
+                let content = responseStr.substring(startIndex, endIndex).trim();
+                
+                // Process quotes to proper format for styling
+                content = content.replace(/<quote source="([^"]+)">([^<]+)<\/quote>/g, 
+                    '<div class="quote-container"><div class="quote-source">**$1**</div><div class="quote-text">$2</div></div>');
+                
+                sections.push({
+                    id: `topic-${i+1}`,
+                    title,
+                    content
+                });
+            }
+            
+            return sections;
+        }
+        
+        // Fallback: If no headings found at all, try to find <quote> tags and process them
+        let processedResponse = responseStr;
+        processedResponse = processedResponse.replace(/<quote source="([^"]+)">([^<]+)<\/quote>/g, 
+            '<div class="quote-container"><div class="quote-source">**$1**</div><div class="quote-text">$2</div></div>');
+        
+        // Split by double newlines for paragraph-based sections
+        const paragraphs = processedResponse.split('\n\n');
+        if (paragraphs.length > 3) { // Only use if we have meaningful distinct paragraphs
+            // Group paragraphs into logical sections
+            const paragraphsPerSection = paragraphs.length <= 6 ? 2 : 3;
+            
+            // Safe slice implementation to handle potential non-array object
+            const safeSlice = (arr: string[], start: number, end?: number): string[] => {
+                if (!Array.isArray(arr)) {
+                    console.error('Expected array for slice operation, got:', typeof arr);
+                    return [];
+                }
+                try {
+                    return arr.slice(start, end);
+                } catch (err) {
+                    console.error('Error during slice operation:', err);
+                    return [];
+                }
+            };
+            
+            for (let i = 0; i < paragraphs.length; i += paragraphsPerSection) {
+                // Use safe slice implementation
+                const sectionParagraphs = safeSlice(paragraphs, i, i + paragraphsPerSection);
+                
+                // Safely get first sentence
+                let title = '';
+                if (sectionParagraphs[0]) {
+                    const firstSentenceParts = sectionParagraphs[0].split('.');
+                    const firstSentence = firstSentenceParts[0] || '';
+                    title = firstSentence.length > 50 
+                        ? firstSentence.substring(0, 50) + '...' 
+                        : firstSentence;
+                } else {
+                    title = `Section ${Math.floor(i/paragraphsPerSection) + 1}`;
+                }
+                
+                sections.push({
+                    id: `topic-${Math.floor(i/paragraphsPerSection) + 1}`,
+                    title: title,
+                    content: sectionParagraphs.join('\n\n')
+                });
+            }
+        } else {
+            // Single section if we can't identify multiple topics
+            sections.push({
+                id: 'topic-1',
+                title: 'Response',
+                content: processedResponse
+            });
+        }
+    } catch (error) {
+        console.error('Error organizing topics:', error);
+        return [{
+            id: 'error-1',
+            title: 'Error Processing Response', 
+            content: 'There was an error processing the response. Please try again.'
+        }];
+    }
+    
+    return sections.length ? sections : [{
+        id: 'topic-1',
+        title: 'Response',
+        content: responseStr
+    }];
+}
+
+// Update the generateContent function
 export async function generateContent(
     input: string,
     statusCallback: (status: string) => void
-): Promise<string> {
+): Promise<string | TopicSection[]> {
     if (typeof window === 'undefined') {
         throw new Error('generateContent must be run in browser context');
+    }
+
+    // Validate inputs
+    if (!input || typeof input !== 'string') {
+        throw new Error('Invalid input: Input must be a non-empty string');
+    }
+    
+    if (typeof statusCallback !== 'function') {
+        console.warn('Invalid statusCallback provided: Using default console logger');
+        statusCallback = (msg) => console.log('Status:', msg);
     }
 
     console.log('Starting content generation for:', input);
@@ -606,6 +809,9 @@ export async function generateContent(
     if (!trimmedInput) {
         throw new Error('Empty input provided');
     }
+
+    const isMultiTopic = detectMultiTopicQuery(trimmedInput);
+    console.log('Is multi-topic query:', isMultiTopic);
 
     try {
         // Detect language from input
@@ -617,19 +823,22 @@ export async function generateContent(
         const webResults = await searchAndFetchContent(trimmedInput, statusCallback);
         console.log('Web results gathered:', webResults.length);
         
-        if (webResults.length === 0) {
+        if (!webResults || !Array.isArray(webResults) || webResults.length === 0) {
             throw new Error('No relevant information found');
         }
 
-        // Limit and structure web context
+        // Send all content to Gemini without summarization
         const webContext = webResults
-            .slice(0, 3) // Limit to top 3 results
             .map(result => 
                 `SOURCE: "${result.title}"\nCONTENT:\n${result.content}\n---\n`
             ).join('\n');
 
-        // Generate response using Gemini with language-specific instructions
-        const prompt = `You are a helpful AI assistant specializing in Islamic knowledge. Please respond in the same language as the input question.
+        // Generate response using Gemini with enhanced instructions
+        // Modify the prompt to encourage more elaboration and detail
+        const promptBase = isMultiTopic ? 
+            `You are a helpful AI assistant specializing in Islamic knowledge. The user has asked a question with multiple topics or aspects. Please respond in the same language as the input question.
+            
+For each topic or aspect of the question, create a dedicated section with a clear heading.
 
 Context from Islamic sources:
 ${webContext}
@@ -645,21 +854,77 @@ Instructions:
    - Direct quotes from sources
    - Summarized information
    - General guidance based on provided information
+6. IMPORTANT: Elaborate in detail on each point - provide thorough explanations
+7. Organize your response with clear headings (use markdown ## format) for each topic or aspect
+8. For each topic, provide extensive explanation with examples where possible
+9. Include relevant context and nuance for each point
+
+STRICT FORMATTING RULES (MUST FOLLOW EXACTLY):
+- Use "# " (H1) for EACH main section heading - this is critical for proper display
+- Each H1 heading creates a completely separate scrollable section
+- Scholar names and reference details MUST be placed at the top of each section in bold format using ** ** 
+- Format direct quotes EXACTLY as follows (use this precise syntax):
+  <quote source="Source Name (Book/Reference)">Quoted text goes here verbatim</quote>
+- Sources must always be placed inside the source attribute, NEVER within the quote text
+- Make each section comprehensive and able to stand alone without needing to read other sections
+- For non-quote paragraphs, use standard markdown formatting
+- Break long text into readable paragraphs
+
+Begin Response:` :
+            `You are a helpful AI assistant specializing in Islamic knowledge. Please respond in the same language as the input question.
+
+Context from Islamic sources:
+${webContext}
+
+Question: ${trimmedInput}
+
+Instructions:
+1. Use ONLY information provided in the context above
+2. If quotes exist, use them exactly as provided with proper attribution
+3. If context lacks clear evidence, acknowledge the limitations
+4. Present multiple viewpoints when available
+5. IMPORTANT: Elaborate in detail - provide thorough explanations with examples
+6. Include relevant historical context where helpful
+
+STRICT FORMATTING RULES (MUST FOLLOW EXACTLY):
+- Use headings and subheadings to organize your response
+- Format direct quotes EXACTLY as follows (use this precise syntax): 
+  <quote source="Source Name (Book/Reference)">Quoted text goes here verbatim</quote>
+- All quotes will be displayed with 50% opacity and indented
+- Sources must always be placed inside the source attribute, NEVER within the quote text
+- For non-quote paragraphs, use standard markdown formatting
+- Break long text into readable paragraphs
 
 Begin Response:`;
 
-        statusCallback('Formulating response...');
-        const response = await generateWithGemini(prompt, 0.7);
+        statusCallback('Formulating detailed response...');
+        const response = await generateWithGemini(promptBase, webResults);
 
-        if (!response) {
-            throw new Error('Failed to generate response');
+        if (!response || typeof response !== 'string' || response.trim() === '') {
+            throw new Error('Empty or invalid response from Gemini');
         }
 
         console.log('Response complete. Length:', response.length);
+        
+        // For multi-topic queries, process the response into sections
+        if (isMultiTopic) {
+            const sections = organizeTopics(response);
+            if (!sections || !Array.isArray(sections) || sections.length === 0) {
+                throw new Error('Failed to organize response into sections');
+            }
+            console.log('Organized into sections:', sections.length);
+            return sections;
+        }
+        
         return response;
         
     } catch (error) {
-        const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
+        let errorMessage = 'An unknown error occurred';
+        if (error instanceof Error) {
+            errorMessage = error.message || errorMessage; 
+        } else if (typeof error === 'string') {
+            errorMessage = error;
+        }
         console.error('Error details:', error);
         throw new Error(errorMessage);
     }

@@ -69,3 +69,9 @@ export interface AladhanResponse {
     }
   }
 }
+
+export interface TopicSection {
+  id: string;
+  title: string;
+  content: string;
+}

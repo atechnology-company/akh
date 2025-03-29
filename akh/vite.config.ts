@@ -44,6 +44,9 @@ export function setLanguageTag(tag) {
 	}
 }
 export function getLanguageTag() { return _currentLanguageTag; }
+export function isAvailableLanguageTag(tag) {
+	return availableLanguageTags.includes(tag);
+}
 
 // RTL languages would include Arabic, Hebrew, etc.
 const rtlLanguages = [];
@@ -83,6 +86,21 @@ export const welcome = () => "Welcome";
 				SEARCH_ENGINE_ID: env.SEARCH_ENGINE_ID,
 				GEMINI_API_KEY: env.GEMINI_API_KEY
 			})
+		},
+		build: {
+			minify: 'terser',
+			terserOptions: {
+				compress: {
+					drop_console: true,
+				},
+			},
+			rollupOptions: {
+				output: {
+					manualChunks: {
+						sveltekit: ['@sveltejs/kit', 'svelte']
+					}
+				}
+			}
 		}
 	};
 });

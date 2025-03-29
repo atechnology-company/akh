@@ -1,13 +1,21 @@
 <script lang="ts">
-    import { onMount } from 'svelte';
+    import { onMount, onDestroy } from 'svelte';
     import { fade, slide } from 'svelte/transition';
     import { cubicOut } from 'svelte/easing';
-    import { t } from '$lib/i18n';
+    import { t, currentLanguage, tStore } from '$lib/i18n';
+    import { languageTag } from '$lib/paraglide/runtime';
     
     let showHeading = false;
     let gradientActive = false;
     let showContent = false;
     let showButtons = false;
+    let greetingText = '';
+    
+    // Subscribe to language changes
+    const unsubscribe = currentLanguage.subscribe(lang => {
+        // Update greeting text when language changes
+        greetingText = t('greeting');
+    });
     
     // Background animation
     type Shape = {
@@ -221,6 +229,9 @@
     }
     
     onMount(() => {
+        // Set greeting text for animation
+        greetingText = t('greeting');
+        
         // Create all shapes immediately
         createShapes();
         
@@ -245,6 +256,11 @@
                 }, 500);
             }, 600);
         }, 300);
+    });
+    
+    onDestroy(() => {
+        // Clean up subscription
+        unsubscribe();
     });
 </script>
 
@@ -279,8 +295,8 @@
 <div class="container">
     <div class="about-container">
         {#if showHeading}
-            <h1 class="visible white-text" class:gradient-active={gradientActive}>
-                {t('greeting')}
+            <h1 class="visible white-text" class:gradient-active={gradientActive} data-greeting={greetingText}>
+                {greetingText}
             </h1>
         {/if}
         
@@ -295,8 +311,8 @@
         {/if}
         {#if showButtons}
             <div class="buttons" transition:slide={{ duration: 400, easing: cubicOut, axis: 'y' }}>
-                <a href="https://buymeacoffee.com/undivisible" class="donate-button">donate here</a>
-                <a href="https://www.alihsan.org.au/project/emergency-appeal" class="foundation-button">the other button</a>
+                <a href="https://buymeacoffee.com/undivisible" class="donate-button">{t('donate_here')}</a>
+                <a href="https://www.alihsan.org.au/project/emergency-appeal" class="foundation-button">{t('the_other_button')}</a>
             </div>
         {/if}
     </div>
@@ -391,7 +407,7 @@
     }
     
     .white-text::before {
-        content: "Assalamualaikum!";
+        content: attr(data-greeting);
         position: absolute;
         top: 0;
         left: 0;

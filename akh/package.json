@@ -1,7 +1,7 @@
 {
 	"name": "akh",
 	"private": true,
-	"version": "0.0.5-experimental",
+	"version": "0.0.7-experimental",
 	"type": "module",
 	"scripts": {
 		"dev": "vite dev",
@@ -17,7 +17,7 @@
 		"ns:build:android": "ns build android",
 		"ns:build:ios": "ns build ios",
 		"mobile:dev": "concurrently \"npm run dev\" \"npm run ns:android\"",
-		"netlify": "npm run prepare && npm run build"
+		"netlify": "npm run prepare && npm run build && echo '/* /index.html 200' > build/_redirects && echo '/*/manifest.webmanifest  Content-Type: application/manifest+json' > build/_headers"
 	},
 	"devDependencies": {
 		"@eslint/compat": "^1.2.5",
@@ -55,7 +55,6 @@
 		"vitest": "^3.0.9"
 	},
 	"dependencies": {
-		"@huggingface/transformers": "^3.4.0",
 		"@inlang/paraglide-sveltekit": "^0.15.5",
 		"@nativescript/core": "^8.9.1",
 		"@nativescript/geolocation": "^9.0.0",

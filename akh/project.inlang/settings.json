@@ -14,7 +14,10 @@
 	},
 	"sourceLanguageTag": "en",
 	"languageTags": [
-		"en"
+		"en",
+		"ru",
+		"id",
+		"zh"
 	],
 	"plugin": {
 		"referenceLanguageTag": "en"

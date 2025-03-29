@@ -5,6 +5,8 @@ written in svelte with help from al-adhan api and nativescript
 
 currently only salah and alif are coded and are **NOT FINAL** do not use this for religious advice please, or at least take what you get with a grain of salt and do your own research
 
+about page background animation inspired by [manus](https://manus.im/login)
+
 ## alif
 Artificial Learning Integration for Fataawa
 

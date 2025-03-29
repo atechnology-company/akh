@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { calculateQiblaDirection, calculateDistanceToKaaba } from '../modules/qibla';
+  import { t } from '$lib/i18n';
   
   let map: google.maps.Map;
   let qiblaLine: google.maps.Polyline;
@@ -114,29 +115,77 @@
       return;
     }
     
+    console.log("Starting qibla finder, checking for map container");
+    
+    // Ensure map container exists in DOM
+    const mapContainer = document.getElementById('map');
+    if (!mapContainer) {
+      console.log("Map container not found, will create it manually");
+      // Try to create it manually if not exists
+      const mapElement = document.createElement('div');
+      mapElement.id = 'map';
+      mapElement.className = 'map';
+      mapElement.style.position = 'absolute';
+      mapElement.style.top = '0';
+      mapElement.style.left = '0';
+      mapElement.style.width = '100%';
+      mapElement.style.height = '100%';
+      document.querySelector('.qibla-container')?.appendChild(mapElement);
+      console.log("Map container created:", mapElement);
+    }
+    
     // Add longer timeout to ensure DOM is fully rendered
+    console.log("Scheduling initialization with delay");
     setTimeout(() => {
       initializeQiblaFinder();
-    }, 100); // Give time for the DOM to update
+    }, 1500); // Increased delay from 200ms to 1500ms
   }
   
   function initializeQiblaFinder() {
+    console.log("Running initializeQiblaFinder");
+    
     // Verify map container exists
     const mapElement = document.getElementById('map');
     if (!mapElement) {
-      console.error('Map container not found, retrying...');
-      // Retry after a short delay
-      setTimeout(initializeQiblaFinder, 100);
-      return;
+        console.error('Map container not found, retrying...');
+        
+        // Try to create element
+        const container = document.createElement('div');
+        container.id = 'map';
+        container.className = 'map';
+        container.style.position = 'absolute';
+        container.style.top = '0';
+        container.style.left = '0';
+        container.style.width = '100%';
+        container.style.height = '100%';
+        document.querySelector('.qibla-container')?.appendChild(container);
+        console.log("Created new map container:", container);
+        
+        // Retry with a longer delay
+        setTimeout(initializeQiblaFinder, 1000); // Increased delay from 500ms to 1000ms
+        return;
     }
 
-    // Ensure map container has dimensions
+    // Ensure map container has dimensions and is visible
     const rect = mapElement.getBoundingClientRect();
     if (rect.width === 0 || rect.height === 0) {
-      console.error('Map container has zero dimensions, retrying...');
-      setTimeout(initializeQiblaFinder, 100);
-      return;
+        console.error('Map container has zero dimensions, retrying...');
+        console.log('Current dimensions:', rect);
+        
+        // Force dimensions
+        mapElement.style.position = 'absolute';
+        mapElement.style.top = '0';
+        mapElement.style.left = '0';
+        mapElement.style.width = '100%';
+        mapElement.style.height = '100%';
+        mapElement.style.display = 'block';
+        mapElement.style.visibility = 'visible';
+        
+        setTimeout(initializeQiblaFinder, 1000); // Increased delay
+        return;
     }
+    
+    console.log("Map container found with dimensions:", rect.width, rect.height);
 
     // Добавляем проверку на наличие библиотек Google Maps перед их использованием
     if (window.google && window.google.maps) {
@@ -1110,88 +1159,74 @@
   }
 </script>
 
-<div class="container">
-  <!-- Отдельный div только для Google Maps -->
-  <div id="map"></div>
-  
-  <!-- Общий контейнер для всего UI поверх карты -->
-  <div class="ui-overlay">
-    <div class="location-note">
-      <span class="note-icon">ℹ️</span>
-      <span class="note-text">Location accuracy may vary</span>
+<div class="qibla-container">
+  {#if isLoading}
+    <div class="loading">
+      <div class="spinner"></div>
+      <p>{t('qibla_finding')}</p>
     </div>
+  {:else if errorMessage}
+    <div class="error">
+      <p>{errorMessage}</p>
+      <button on:click={startQiblaFinder}>
+        {t('retry')}
+      </button>
+    </div>
+  {:else}
     
-    {#if !isStarted}
-      <div class="start-screen">
-        <h1>Qibla Direction Finder</h1>
-        <p>Find the direction to the Kaaba from your current location</p>
-        <button class="start-button" on:click={startQiblaFinder}>
-          Show Qibla Direction
+    <div class="qibla-info">
+      <div class="qibla-card">
+        <h2>{t('qibla_title')}</h2>
+        <div class="direction-value">{qiblaDirection.toFixed(1)}° {t('qibla_degrees')}</div>
+        <div class="distance-value">{(distanceToKaaba / 1000).toFixed(0)} km</div>
+        
+        <div class="accuracy-info" class:low-accuracy={locationAccuracy > 100} class:medium-accuracy={locationAccuracy > 50 && locationAccuracy <= 100}>
+          <span class="accuracy-icon">
+            {#if locationAccuracy <= 50}
+              <i class="material-icons">gps_fixed</i>
+            {:else if locationAccuracy <= 100}
+              <i class="material-icons">gps_not_fixed</i>
+            {:else}
+              <i class="material-icons">gps_off</i>
+            {/if}
+          </span>
+          <span>{accuracyText}</span>
+          
+          {#if locationAccuracy > 100}
+            <div class="accuracy-warning">
+              {t('qibla_accuracy')}
+            </div>
+          {/if}
+        </div>
+        
+        <div class="device-heading-info">
+          <span class="device-icon">
+            <i class="material-icons">navigation</i>
+          </span>
+          <span>{t('qibla_north')}</span>
+        </div>
+        
+        <button class="calibrate-button" on:click={calibrateCompass}>
+          {t('retry')}
         </button>
       </div>
-    {:else if isLoading}
-      <div class="loading">
-        <div class="spinner"></div>
-        <p>Loading qibla direction...</p>
+    </div>
+  {/if}
+  
+  {#if isCalibrating}
+    <div class="calibration-overlay">
+      <div class="calibration-content">
+        <h3>{t('qibla_permission')}</h3>
+        <div class="figure-eight"></div>
+        <p>{t('qibla_north')}</p>
+        <button on:click={() => isCalibrating = false}>OK</button>
       </div>
-    {:else if errorMessage}
-      <div class="error">
-        <p>{errorMessage}</p>
-        <button on:click={() => window.location.reload()}>Retry</button>
-      </div>
-    {:else}
-      <div class="qibla-info">
-        <div class="qibla-card">
-          <h2>Qibla Direction</h2>
-          <div class="direction-value">{qiblaDirection.toFixed(1)}° from North</div>
-          <div class="distance-value">{distanceToKaaba} km to Kaaba</div>
-          
-          {#if locationAccuracy > 0}
-            <div class="accuracy-info {locationAccuracy > 100 ? 'low-accuracy' : (locationAccuracy > 50 ? 'medium-accuracy' : '')}">
-              <span class="accuracy-icon">
-                {#if locationAccuracy <= 50}
-                  📍 <!-- High accuracy icon -->
-                {:else if locationAccuracy <= 100}
-                  📌 <!-- Medium accuracy icon -->
-                {:else}
-                  ⚠️ <!-- Low accuracy warning -->
-                {/if}
-              </span>
-              <span class="accuracy-text">{accuracyText}</span>
-              {#if locationAccuracy > 100}
-                <div class="accuracy-warning">Your location may not be precise</div>
-              {/if}
-            </div>
-          {/if}
-          
-          {#if currentHeading !== 0}
-            <div class="device-heading-info">
-              <span class="device-icon">📱</span>
-              <span>Your phone points: {currentHeading.toFixed(1)}°</span>
-            </div>
-          {/if}
-          
-          <button class="calibrate-button" on:click={calibrateCompass}>
-            Calibrate Direction
-          </button>
-        </div>
-      </div>
-    {/if}
-    
-    {#if isCalibrating}
-      <div class="calibration-overlay">
-        <div class="calibration-content">
-          <h3>Calibrating Direction</h3>
-          <p>Rotate your device in a figure-8 pattern to calibrate</p>
-          <div class="figure-eight"></div>
-        </div>
-      </div>
-    {/if}
-  </div>
+    </div>
+  {/if}
 </div>
 
 <style>
-  .container {
+  .qibla-container {
     position: relative;
     width: 100%;
     height: 100vh;
@@ -1227,7 +1262,7 @@
   }
   
   /* Добавляем полупрозрачный фон для всех блоков информации */
-  .qibla-card, .location-note, .start-screen, .loading, .error {
+  .qibla-card, .location-note, .start-screen, .error {
     background: rgba(255, 248, 231, 0.8);
     backdrop-filter: blur(5px); /* Добавляем blur эффект для современных браузеров */
     border-radius: 8px;
@@ -1240,6 +1275,9 @@
     justify-content: center;
     align-items: center;
     height: 100%;
+    background-color: #000000;
+    color: #ffffff;
+    border-radius: 8px;
   }
   
   .spinner {

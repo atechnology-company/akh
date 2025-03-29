@@ -1,10 +1,11 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, onDestroy } from 'svelte';
   import { generateContent } from '../modules/plates-engine';
   import * as AlifUI from '../modules/alif-ui';
-  import type { AlifComponentData } from '../types/index';
+  import type { AlifComponentData, TopicSection } from '../types/index';
   import { marked } from 'marked';
-  import { t } from '$lib/i18n';
+  import { t, currentLanguage } from '$lib/i18n';
+  import { languageTag } from '$lib/paraglide/runtime';
 
   let promptInput: HTMLTextAreaElement;
   let greeting: HTMLHeadingElement;
@@ -12,6 +13,32 @@
   let resultText: string = '';
   let isInputPage: boolean = true;
   let isLoading: boolean = false;
+  let isMultiTopic: boolean = false;
+  let topicSections: TopicSection[] = [];
+  let activeTopicIndex: number = 0;
+  let isTransitioning: boolean = false;
+  let touchStartY: number = 0;
+  let scrollTimeout: NodeJS.Timeout;
+  let translatedGreeting: string = '';
+
+  // Subscribe to language changes
+  const unsubscribe = currentLanguage.subscribe(lang => {
+    // Update greeting text when language changes
+    translatedGreeting = t('greeting');
+    
+    // Update UI if component refs are available
+    if (greeting) {
+      greeting.innerText = translatedGreeting;
+    }
+    
+    if (typingTip) {
+      typingTip.innerText = t('press_enter');
+    }
+    
+    if (promptInput) {
+      promptInput.placeholder = t('what_to_learn');
+    }
+  });
 
   // Create component data object for passing to UI functions
   const componentData: AlifComponentData = {
@@ -24,6 +51,9 @@
   };
 
   onMount(() => {
+    // Get translated greeting
+    translatedGreeting = t('greeting');
+    
     // Update component data with references
     componentData.promptInput = promptInput;
     componentData.greeting = greeting;
@@ -31,6 +61,11 @@
     
     // Initialize UI
     AlifUI.initializeUI(componentData);
+  });
+  
+  onDestroy(() => {
+    // Clean up subscription
+    unsubscribe();
   });
 
   function handleInput(event: Event): void {
@@ -44,6 +79,86 @@
     }
   }
 
+  function handleTouchStart(event: TouchEvent): void {
+    touchStartY = event.touches[0].clientY;
+  }
+
+  function handleTouchMove(event: TouchEvent): void {
+    if (isTransitioning || !isMultiTopic) return;
+    
+    const currentY = event.touches[0].clientY;
+    const diffY = touchStartY - currentY;
+    
+    // Significant swipe (> 50px)
+    if (Math.abs(diffY) > 50) {
+      if (diffY > 0 && activeTopicIndex < topicSections.length - 1) {
+        // Swipe up - next topic
+        navigateToTopic(activeTopicIndex + 1);
+      } else if (diffY < 0 && activeTopicIndex > 0) {
+        // Swipe down - previous topic
+        navigateToTopic(activeTopicIndex - 1);
+      }
+      touchStartY = currentY;
+    }
+  }
+
+  function handleWheel(event: WheelEvent): void {
+    if (isTransitioning || !isMultiTopic) return;
+    
+    clearTimeout(scrollTimeout);
+    
+    scrollTimeout = setTimeout(() => {
+      if (event.deltaY > 0 && activeTopicIndex < topicSections.length - 1) {
+        // Scroll down - next topic
+        navigateToTopic(activeTopicIndex + 1);
+      } else if (event.deltaY < 0 && activeTopicIndex > 0) {
+        // Scroll up - previous topic
+        navigateToTopic(activeTopicIndex - 1);
+      }
+    }, 50);
+  }
+
+  function navigateToTopic(index: number): void {
+    if (isTransitioning) return;
+    
+    // Validate input
+    if (!topicSections || !Array.isArray(topicSections) || topicSections.length === 0) {
+      console.error('Cannot navigate: no topic sections available');
+      return;
+    }
+    
+    // Clamp index to valid range
+    if (index < 0 || index >= topicSections.length) {
+      console.error(`Invalid topic index: ${index}. Valid range: 0-${topicSections.length - 1}`);
+      index = Math.max(0, Math.min(index, topicSections.length - 1));
+    }
+    
+    isTransitioning = true;
+    
+    // Fade out current topic
+    const resultElement = document.getElementById('result-text');
+    if (resultElement) {
+      resultElement.style.opacity = '0';
+      
+      // After fade out, switch topics
+      setTimeout(() => {
+        activeTopicIndex = index;
+        
+        // Fade in new topic
+        setTimeout(() => {
+          if (resultElement) {
+            resultElement.style.opacity = '1';
+          }
+          isTransitioning = false;
+        }, 300);
+      }, 300);
+    } else {
+      console.warn('Result element not found in DOM');
+      activeTopicIndex = index;
+      isTransitioning = false;
+    }
+  }
+
   async function submitPrompt(): Promise<void> {
     if (!promptInput?.value.trim()) return;
     
@@ -53,6 +168,9 @@
       componentData.isInputPage = false;
       isLoading = true;
       resultText = 'Searching for relevant information...';
+      isMultiTopic = false;
+      topicSections = [];
+      activeTopicIndex = 0;
       AlifUI.switchToResultsPage();
       
       // Generate content with status updates
@@ -64,10 +182,18 @@
         }
       );
       
-      // Display final result after a small delay to ensure transition is complete
+      // Handle the response based on its type (string or TopicSection[])
       setTimeout(() => {
-        resultText = response;
-        AlifUI.displayFinalResult(response);
+        if (Array.isArray(response)) {
+          isMultiTopic = true;
+          topicSections = response;
+          // Display first topic immediately
+          resultText = topicSections[0].content;
+          AlifUI.displayFinalResult(topicSections[0].content);
+        } else {
+          resultText = response;
+          AlifUI.displayFinalResult(response);
+        }
         isLoading = false;
       }, 100);
       
@@ -83,6 +209,9 @@
   function goBack(): void {
     isInputPage = true;
     componentData.isInputPage = true;
+    isMultiTopic = false;
+    topicSections = [];
+    activeTopicIndex = 0;
     setTimeout(() => {
       if (promptInput) {
         promptInput.focus();
@@ -100,7 +229,7 @@
 
 <div id="input-page" class="page" class:active={isInputPage}>
   <div class="container">
-    <h1 id="greeting" bind:this={greeting}>{t('greeting')}</h1>
+    <h1 id="greeting" bind:this={greeting}>{translatedGreeting}</h1>
     <textarea
       bind:this={promptInput}
       id="prompt-input"
@@ -115,14 +244,59 @@
   </div>
 </div>
 
-<div id="result-page" class="page" class:active={!isInputPage}>
+<div id="result-page" class="page" class:active={!isInputPage} 
+     on:wheel={handleWheel} 
+     on:touchstart={handleTouchStart} 
+     on:touchmove={handleTouchMove}>
   <div class="close">
     <button class="back-btn" on:click={goBack} disabled={isLoading}>
       <span class="material-symbols-rounded">close</span>
     </button>
   </div>
+  
+  {#if isMultiTopic}
+    <div class="topic-navigation">
+      {#if topicSections && Array.isArray(topicSections)}
+        {#each topicSections as section, i}
+          {#if section && typeof section === 'object' && section.id && section.title}
+            <div class="topic-dot" class:active={i === activeTopicIndex} on:click={() => navigateToTopic(i)}>
+              <span class="dot-label">{i + 1}</span>
+              <span class="dot-tooltip">{section.title}</span>
+            </div>
+          {/if}
+        {/each}
+      {/if}
+    </div>
+    
+    <div class="topic-header">
+      <h2>{topicSections && Array.isArray(topicSections) && activeTopicIndex >= 0 && activeTopicIndex < topicSections.length ? (topicSections[activeTopicIndex]?.title || 'Section') : 'Section'}</h2>
+      <div class="topic-indicator">
+        <span>{activeTopicIndex + 1}/{topicSections && Array.isArray(topicSections) ? topicSections.length : 1}</span>
+      </div>
+    </div>
+  {/if}
+  
   <div class="container">
-    <div id="result-text">{resultText}</div>
+    <div id="result-text" class:multi-topic={isMultiTopic}>
+      {#if isMultiTopic}
+        {#if topicSections && topicSections.length > 0 && activeTopicIndex >= 0 && activeTopicIndex < topicSections.length}
+          {@html marked(topicSections[activeTopicIndex]?.content || 'No content available', { 
+            breaks: true, 
+            gfm: true
+          })}
+        {:else}
+          <div class="error-message">Error loading content. Please try again.</div>
+        {/if}
+      {:else if resultText.includes('<div class="quote-container">')}
+        {@html marked(resultText, { 
+          breaks: true, 
+          gfm: true
+        })}
+      {:else}
+        {resultText}
+      {/if}
+    </div>
+    
     {#if isLoading}
       <div class="generation-indicator">
         <div class="galaxy-loader">
@@ -134,6 +308,24 @@
           <div class="star star-5"></div>
         </div>
         <div class="status-text">{resultText}</div>
+      </div>
+    {/if}
+    
+    {#if isMultiTopic && !isLoading}
+      <div class="swipe-indicators">
+        {#if topicSections && Array.isArray(topicSections) && activeTopicIndex > 0}
+          <div class="swipe-up" on:click={() => navigateToTopic(activeTopicIndex - 1)}>
+            <span class="material-symbols-rounded">expand_less</span>
+            <span class="swipe-text">Previous: {(topicSections[activeTopicIndex - 1]?.title || 'Previous Section').substr(0, 30)}{topicSections[activeTopicIndex - 1]?.title?.length > 30 ? '...' : ''}</span>
+          </div>
+        {/if}
+        
+        {#if topicSections && Array.isArray(topicSections) && activeTopicIndex < topicSections.length - 1}
+          <div class="swipe-down" on:click={() => navigateToTopic(activeTopicIndex + 1)}>
+            <span class="swipe-text">Next: {(topicSections[activeTopicIndex + 1]?.title || 'Next Section').substr(0, 30)}{topicSections[activeTopicIndex + 1]?.title?.length > 30 ? '...' : ''}</span>
+            <span class="material-symbols-rounded">expand_more</span>
+          </div>
+        {/if}
       </div>
     {/if}
   </div>
@@ -580,5 +772,204 @@
       font-size: 1rem;
       max-width: 300px;
     }
+  }
+
+  .topic-navigation {
+    position: fixed;
+    right: 20px;
+    top: 50%;
+    transform: translateY(-50%);
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+    z-index: 100;
+  }
+
+  .topic-dot {
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    background: rgba(0, 0, 0, 0.2);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    position: relative;
+    transition: all 0.3s ease;
+  }
+
+  .topic-dot.active {
+    background: #000;
+    transform: scale(1.2);
+  }
+
+  .dot-label {
+    color: rgba(255, 255, 255, 0.8);
+    font-size: 12px;
+    font-weight: bold;
+  }
+
+  .topic-dot.active .dot-label {
+    color: #fff8e7;
+  }
+
+  .dot-tooltip {
+    position: absolute;
+    right: 40px;
+    background: rgba(0, 0, 0, 0.8);
+    color: #fff;
+    padding: 5px 10px;
+    border-radius: 4px;
+    font-size: 14px;
+    opacity: 0;
+    visibility: hidden;
+    transition: all 0.3s ease;
+    pointer-events: none;
+    white-space: nowrap;
+    max-width: 200px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .topic-dot:hover .dot-tooltip {
+    opacity: 1;
+    visibility: visible;
+  }
+
+  .topic-header {
+    position: absolute;
+    top: 40px;
+    left: 80px;
+    right: 80px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    z-index: 5;
+  }
+
+  .topic-header h2 {
+    margin: 0;
+    font-size: 2rem;
+    font-weight: 300;
+  }
+
+  .topic-indicator {
+    background: rgba(0, 0, 0, 0.1);
+    padding: 5px 12px;
+    border-radius: 20px;
+    font-size: 14px;
+  }
+
+  #result-text.multi-topic {
+    padding-top: 60px;
+    transition: opacity 0.3s ease;
+  }
+
+  .swipe-indicators {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 30px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 20px;
+    pointer-events: none;
+  }
+
+  .swipe-up, .swipe-down {
+    background: rgba(0, 0, 0, 0.1);
+    padding: 10px 20px;
+    border-radius: 25px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+    pointer-events: auto;
+    transition: all 0.2s ease;
+  }
+
+  .swipe-up:hover, .swipe-down:hover {
+    background: rgba(0, 0, 0, 0.2);
+  }
+
+  .swipe-text {
+    font-size: 14px;
+  }
+
+  /* Mobile responsiveness for multi-topic display */
+  @media (max-width: 768px) {
+    .topic-navigation {
+      right: 10px;
+    }
+
+    .topic-dot {
+      width: 25px;
+      height: 25px;
+    }
+
+    .topic-header {
+      left: 60px;
+      right: 60px;
+      top: 30px;
+    }
+
+    .topic-header h2 {
+      font-size: 1.5rem;
+    }
+    
+    #result-text.multi-topic {
+      padding-top: 80px;
+    }
+  }
+
+  @media (max-width: 480px) {
+    .topic-header {
+      left: 50px;
+      right: 50px;
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 10px;
+    }
+    
+    .topic-header h2 {
+      font-size: 1.3rem;
+    }
+    
+    .topic-navigation {
+      opacity: 0.5;
+    }
+    
+    .topic-navigation:hover {
+      opacity: 1;
+    }
+    
+    #result-text.multi-topic {
+      padding-top: 100px;
+    }
+  }
+
+  /* Add styling for our custom quote format */
+  .quote-container {
+    margin: 2rem 0;
+    padding: 1rem;
+    background-color: rgba(0, 0, 0, 0.03);
+    border-radius: 8px;
+    overflow: hidden;
+  }
+
+  .quote-source {
+    font-weight: bold;
+    margin-bottom: 0.5rem;
+    font-size: 0.9em;
+    color: #000;
+  }
+
+  .quote-text {
+    opacity: 0.5;
+    font-style: italic;
+    padding: 0.5rem 0 0 1.5rem;
+    border-left: 3px solid rgba(0, 0, 0, 0.2);
+    line-height: 1.6;
   }
 </style>
