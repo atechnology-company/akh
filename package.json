@@ -9,6 +9,7 @@
 		"dev:web": "vite dev",
 		"dev:android": "ns run android",
 		"dev:ios": "ns run ios",
+		"webbuild": "turbo run build:web",
 		"build": "turbo run build:web build:android --parallel",
 		"web:build": "turbo run build:web",
 		"build:web": "vite build && echo '/* /.netlify/functions/sveltekit-render 200' > build/_redirects",
