@@ -4,9 +4,11 @@ node_modules
 .output
 .vercel
 .netlify
+.turbo
 .wrangler
 /.svelte-kit
 /build
+/app
 /App_Resources
 /platforms
 

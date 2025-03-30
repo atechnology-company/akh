@@ -1,0 +1,80 @@
+{
+    "$schema": "https://turbo.build/schema.json",
+    "tasks": {
+      "build": {
+        "dependsOn": ["^build"]
+      },
+      "build:web": {
+        "dependsOn": ["prepare"],
+        "outputs": ["build/**", ".svelte-kit/**"]
+      },
+      "build:android": {
+        "dependsOn": ["build:web"],
+        "outputs": [
+          "platforms/android/app/build/**",
+          "platforms/android/app/build/outputs/apk/**/*.apk"
+        ]
+      },
+      "build:ios": {
+        "outputs": ["platforms/ios/build/**"]
+      },
+      "dev": {
+        "dependsOn": ["^dev"]
+      },
+      "dev:web": {
+        "dependsOn": ["prepare"],
+        "cache": false,
+        "persistent": true
+      },
+      "dev:android": {
+        "cache": false,
+        "persistent": true
+      },
+      "dev:ios": {
+        "cache": false,
+        "persistent": true
+      },
+      "check": {
+        "dependsOn": ["^check"]
+      },
+      "check:web": {
+        "dependsOn": ["prepare"],
+        "outputs": []
+      },
+      "check:types": {
+        "outputs": []
+      },
+      "lint": {
+        "dependsOn": ["^lint"]
+      },
+      "lint:prettier": {
+        "outputs": []
+      },
+      "lint:eslint": {
+        "outputs": []
+      },
+      "format": {
+        "dependsOn": ["^format"]
+      },
+      "format:prettier": {
+        "outputs": []
+      },
+      "format:eslint": {
+        "outputs": []
+      },
+      "test": {
+        "dependsOn": ["build:web"]
+      },
+      "test:unit": {
+        "dependsOn": ["build:web"],
+        "outputs": ["coverage/**"]
+      },
+      "test:e2e": {
+        "dependsOn": ["build:web"],
+        "outputs": ["test-results/**"]
+      },
+      "prepare": {
+        "outputs": [".svelte-kit/**"]
+      }
+    }
+  }
