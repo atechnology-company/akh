@@ -149,204 +149,64 @@ export function savePrayerSettings(settings: PrayerSettings) {
 }
 
 // Get current location
-export async function getCurrentLocation(): Promise<Location | null> {
+export const getCurrentLocation = async (): Promise<Location | null> => {
+  // Add mobile browser detection
+  const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+  console.log('Browser type:', isMobile ? 'Mobile' : 'Desktop');
+  
   return new Promise((resolve) => {
-    if (!browser || !navigator.geolocation) {
-      console.error('Geolocation not supported by browser');
-      showToast('Geolocation is not supported by your browser', {
-        theme: {
-          '--toastBackground': '#F56565',
-          '--toastBarBackground': '#C53030'
-        }
-      });
+    if (!navigator.geolocation) {
+      console.log('Geolocation not supported by browser');
       resolve(null);
       return;
     }
 
-    console.log('Requesting geolocation...');
+    // Set a timeout for mobile browsers
+    const timeout = isMobile ? 10000 : 5000; // 10 seconds for mobile, 5 for desktop
     
-    // First get IP-based location to compare with browser geolocation
-    const getIpLocation = async () => {
-      try {
-        const response = await fetch('https://ipapi.co/json/');
-        const data = await response.json();
-        
-        if (data && data.latitude && data.longitude) {
-          return {
-            latitude: data.latitude,
-            longitude: data.longitude,
-            city: data.city || 'Unknown',
-            country: data.country_name || 'Unknown'
-          };
-        }
-      } catch (error) {
-        console.error('Error getting IP-based location:', error);
-      }
-      return null;
+    const options = {
+      enableHighAccuracy: true,
+      timeout: timeout,
+      maximumAge: 0
     };
-    
-    // Calculate distance between two points in km using Haversine formula
-    const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: number) => {
-      const R = 6371; // Radius of the earth in km
-      const dLat = (lat2 - lat1) * Math.PI / 180;
-      const dLon = (lon2 - lon1) * Math.PI / 180;
-      const a = 
-        Math.sin(dLat/2) * Math.sin(dLat/2) +
-        Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * 
-        Math.sin(dLon/2) * Math.sin(dLon/2);
-      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-      return R * c; // Distance in km
-    };
-    
-    // Get browser-reported location and compare with IP location
+
+    console.log('Requesting geolocation with options:', options);
+
     navigator.geolocation.getCurrentPosition(
-      async (position) => {
-        const { latitude, longitude } = position.coords;
-        console.log('Geolocation success:', latitude, longitude);
-        
-        // Get IP-based location for comparison
-        const ipLocation = await getIpLocation();
-        
-        let useIpLocation = false;
-        
-        if (ipLocation) {
-          // Calculate distance between browser geolocation and IP location
-          const distance = calculateDistance(
-            latitude, 
-            longitude, 
-            ipLocation.latitude, 
-            ipLocation.longitude
-          );
-          
-          console.log(`Distance between browser location and IP location: ${distance.toFixed(2)}km`);
-          
-          // If the distance is greater than 100km, use IP location instead
-          if (distance > 100) {
-            console.warn('Browser reported location is significantly different from IP-based location. Using IP location instead.');
-            
-            // Create location object from IP data
-            const location: Location = {
-              latitude: ipLocation.latitude,
-              longitude: ipLocation.longitude,
-              timezone: -new Date().getTimezoneOffset() / 60,
-              city: ipLocation.city || 'Unknown',
-              country: ipLocation.country || 'Unknown'
-            };
-            
-            // Show warning to user
-            showToast('Your browser reported a location that appears to be incorrect. Using IP-based location instead.', {
-              theme: {
-                '--toastBackground': '#F56565',
-                '--toastBarBackground': '#C53030'
-              }
-            });
-            
-            locationStore.set(location);
-            
-            // Save to localStorage
-            if (browser) {
-              localStorage.setItem('lastKnownLocation', JSON.stringify(location));
-              console.log('Saved IP-based location to localStorage');
-            }
-            
-            resolve(location);
-            return;
-          }
-        }
-        
-        try {
-          // Get timezone
-          const timezone = -new Date().getTimezoneOffset() / 60;
-          console.log('Timezone offset in hours:', timezone);
-          
-          // Create location object
-          const location: Location = {
-            latitude,
-            longitude,
-            timezone
-          };
-          
-          // Try to get city and country
-          try {
-            console.log('Fetching location details from OpenStreetMap...');
-            const response = await fetch(
-              `https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}&zoom=10&addressdetails=1`
-            );
-            const data = await response.json();
-            
-            if (data && data.address) {
-              location.city = data.address.city || data.address.town || data.address.village || data.address.county || 'Unknown';
-              location.country = data.address.country || 'Unknown';
-              console.log('Location details:', location.city, location.country);
-            }
-          } catch (error) {
-            console.error('Error fetching location details:', error);
-            location.city = 'Unknown';
-            location.country = 'Unknown';
-          }
-          
-          console.log('Setting location store with:', location);
-          locationStore.set(location);
-          
-          // Save to localStorage
-          if (browser) {
-            localStorage.setItem('lastKnownLocation', JSON.stringify(location));
-            console.log('Saved location to localStorage');
-          }
-          
-          resolve(location);
-        } catch (error) {
-          console.error('Error getting location:', error);
-          showToast('Failed to get location details', {
-            theme: {
-              '--toastBackground': '#F56565',
-              '--toastBarBackground': '#C53030'
-            }
-          });
-          resolve(null);
-        }
+      (position) => {
+        console.log('Geolocation success:', position);
+        resolve({
+          latitude: position.coords.latitude,
+          longitude: position.coords.longitude,
+          city: 'Unknown',
+          country: 'Unknown',
+          timezone: -new Date().getTimezoneOffset() / 60
+        });
       },
       (error) => {
         console.error('Geolocation error:', error);
-        let message = 'Failed to get your location';
-        
-        if (error.code === 1) {
-          message = 'Location access denied. Please enable location services.';
-        } else if (error.code === 2) {
-          message = 'Location unavailable. Please try again.';
-        } else if (error.code === 3) {
-          message = 'Location request timed out. Please try again.';
+        // Try to get more specific error information
+        let errorMessage = 'Unknown error';
+        switch (error.code) {
+          case error.PERMISSION_DENIED:
+            errorMessage = 'Permission denied';
+            break;
+          case error.POSITION_UNAVAILABLE:
+            errorMessage = 'Position unavailable';
+            break;
+          case error.TIMEOUT:
+            errorMessage = 'Request timed out';
+            break;
+          default:
+            errorMessage = error.message;
         }
-        
-        showToast(message, {
-          theme: {
-            '--toastBackground': '#F56565',
-            '--toastBarBackground': '#C53030'
-          }
-        });
-        
-        // Try to load last known location from localStorage
-        if (browser) {
-          try {
-            const savedLocation = localStorage.getItem('lastKnownLocation');
-            if (savedLocation) {
-              const location = JSON.parse(savedLocation);
-              console.log('Using saved location from localStorage:', location);
-              locationStore.set(location);
-              resolve(location);
-              return;
-            }
-          } catch (e) {
-            console.error('Error loading saved location:', e);
-          }
-        }
-        
+        console.error('Geolocation error details:', errorMessage);
         resolve(null);
       },
-      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+      options
     );
   });
-}
+};
 
 // Calculate prayer times with settings
 export async function calculatePrayerTimesWithSettings(
@@ -445,167 +305,116 @@ export async function calculatePrayerTimesWithSettings(
 // Initialize prayer times
 export async function initializePrayerTimes(): Promise<void> {
   try {
+    // Add mobile browser detection
+    const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+    console.log('Browser type:', isMobile ? 'Mobile' : 'Desktop');
+    console.log('User agent:', navigator.userAgent);
+    
     // Load saved settings
     const settings = loadSavedSettings();
+    console.log('Loaded settings:', settings);
     
     // First try to get location from store
     let location = get(locationStore);
     console.log("Location from store:", location);
     
-    // Utility functions for location validation
+    // Utility function for IP-based location
     const getIpLocation = async () => {
       try {
+        console.log('Attempting to get IP-based location...');
         const response = await fetch('https://ipapi.co/json/');
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
         const data = await response.json();
+        console.log('IP location response:', data);
         
         if (data && data.latitude && data.longitude) {
           return {
             latitude: data.latitude,
             longitude: data.longitude,
             city: data.city || 'Unknown',
-            country: data.country_name || 'Unknown'
+            country: data.country_name || 'Unknown',
+            timezone: -new Date().getTimezoneOffset() / 60
           };
         }
       } catch (error) {
         console.error('Error getting IP-based location:', error);
+        // Try alternative IP service as fallback
+        try {
+          console.log('Trying alternative IP service...');
+          const altResponse = await fetch('https://ip-api.com/json/');
+          if (!altResponse.ok) {
+            throw new Error(`HTTP error! status: ${altResponse.status}`);
+          }
+          const altData = await altResponse.json();
+          console.log('Alternative IP location response:', altData);
+          
+          if (altData && altData.lat && altData.lon) {
+            return {
+              latitude: altData.lat,
+              longitude: altData.lon,
+              city: altData.city || 'Unknown',
+              country: altData.country || 'Unknown',
+              timezone: -new Date().getTimezoneOffset() / 60
+            };
+          }
+        } catch (altError) {
+          console.error('Error getting alternative IP location:', altError);
+        }
       }
       return null;
     };
     
-    const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: number) => {
-      const R = 6371; // Radius of the earth in km
-      const dLat = (lat2 - lat1) * Math.PI / 180;
-      const dLon = (lon2 - lon1) * Math.PI / 180;
-      const a = 
-        Math.sin(dLat/2) * Math.sin(dLat/2) +
-        Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * 
-        Math.sin(dLon/2) * Math.sin(dLon/2);
-      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-      return R * c; // Distance in km
-    };
-
-    // Validate stored location if it exists
-    if (location) {
-      // Get IP location for comparison
-      const ipLocation = await getIpLocation();
-      
-      if (ipLocation) {
-        const distance = calculateDistance(
-          location.latitude, 
-          location.longitude, 
-          ipLocation.latitude, 
-          ipLocation.longitude
-        );
-        
-        console.log(`Distance between stored location and IP location: ${distance.toFixed(2)}km`);
-        
-        // If distance is large (> 100km), use IP location instead
-        if (distance > 100) {
-          console.warn('Stored location is significantly different from IP location. Using IP location instead.');
-          
-          // Create new location object
-          location = {
-            latitude: ipLocation.latitude,
-            longitude: ipLocation.longitude,
-            timezone: -new Date().getTimezoneOffset() / 60,
-            city: ipLocation.city || 'Unknown',
-            country: ipLocation.country || 'Unknown'
-          };
-          
-          showToast('Your saved location appears to be incorrect. Using IP-based location instead.', {
-            theme: {
-              '--toastBackground': '#F56565',
-              '--toastBarBackground': '#C53030'
-            }
-          });
-          
-          // Update the store
-          locationStore.set(location);
-        }
-      }
-    }
-    
+    // If no location in store, try to get it
     if (!location) {
-      console.log("No location in store, checking localStorage");
-      // Try to get location from localStorage
-      try {
-        const savedLocation = localStorage.getItem('lastKnownLocation');
-        
-        if (savedLocation) {
-          const parsedLocation = JSON.parse(savedLocation);
-          
-          // Validate saved location against IP
-          const ipLocation = await getIpLocation();
-          
-          if (ipLocation) {
-            const distance = calculateDistance(
-              parsedLocation.latitude,
-              parsedLocation.longitude,
-              ipLocation.latitude,
-              ipLocation.longitude
-            );
-            
-            console.log(`Distance between localStorage location and IP location: ${distance.toFixed(2)}km`);
-            
-            if (distance > 100) {
-              console.warn('Location in localStorage is significantly different from IP location.');
-              
-              // Use IP location instead
-              location = {
-                latitude: ipLocation.latitude,
-                longitude: ipLocation.longitude,
-                timezone: -new Date().getTimezoneOffset() / 60,
-                city: ipLocation.city || 'Unknown',
-                country: ipLocation.country || 'Unknown'
-              };
-              
-              showToast('Your saved location appears to be incorrect. Using IP-based location instead.', {
-                theme: {
-                  '--toastBackground': '#F56565',
-                  '--toastBarBackground': '#C53030'
-                }
-              });
-              
-              // Update the store
-              locationStore.set(location);
-            } else {
-              location = parsedLocation;
-              console.log("Found valid location in localStorage:", location);
-              // Update the store
-              locationStore.set(location);
-            }
-          } else {
-            // If can't get IP location, use saved location
-            location = parsedLocation;
-            console.log("Found location in localStorage (couldn't validate with IP):", location);
-            // Update the store
-            locationStore.set(location);
-          }
-        } else {
-          console.log("No saved location in localStorage");
-        }
-      } catch (e) {
-        console.error('Error parsing saved location:', e);
+      console.log("No location in store, attempting to get location...");
+      
+      // For mobile browsers, try IP location first as it's more reliable
+      if (isMobile) {
+        console.log("Mobile browser detected, trying IP location first...");
+        location = await getIpLocation();
       }
       
-      // If still no location, get current
+      // If IP location failed or not mobile, try browser geolocation
       if (!location) {
-        console.log("Getting current location via geolocation API");
+        console.log("IP location failed or not mobile, trying browser geolocation...");
         location = await getCurrentLocation();
-        
-        // If still no location, use default
-        if (!location) {
-          console.log("Using default location (Mecca)");
-          // Use default location (Mecca)
-          location = {
-            latitude: 21.3891,
-            longitude: 39.8579,
-            city: 'Mecca',
-            country: 'Saudi Arabia',
-            timezone: 3
-          };
-          // Update the store
-          locationStore.set(location);
+      }
+      
+      // If both failed, try to get from localStorage
+      if (!location) {
+        console.log("Both location methods failed, trying localStorage...");
+        try {
+          const savedLocation = localStorage.getItem('lastKnownLocation');
+          if (savedLocation) {
+            location = JSON.parse(savedLocation);
+            console.log("Found location in localStorage:", location);
+          }
+        } catch (e) {
+          console.error('Error parsing saved location:', e);
+        }
+      }
+      
+      // If still no location, use default
+      if (!location) {
+        console.log("Using default location (Mecca)");
+        location = {
+          latitude: 21.3891,
+          longitude: 39.8579,
+          city: 'Mecca',
+          country: 'Saudi Arabia',
+          timezone: 3
+        };
+      }
+      
+      // Update the store
+      if (location) {
+        locationStore.set(location);
+        // Save to localStorage
+        if (browser) {
+          localStorage.setItem('lastKnownLocation', JSON.stringify(location));
+          console.log("Saved location to localStorage:", location);
         }
       }
     }
@@ -624,12 +433,6 @@ export async function initializePrayerTimes(): Promise<void> {
       
       // Calculate prayer times - location is guaranteed to be non-null here
       await calculatePrayerTimesWithSettings(location.latitude, location.longitude, settings);
-      
-      // Save location to localStorage
-      if (browser) {
-        localStorage.setItem('lastKnownLocation', JSON.stringify(location));
-        console.log("Saved location to localStorage:", location);
-      }
     }
   } catch (error) {
     console.error('Error initializing prayer times:', error);

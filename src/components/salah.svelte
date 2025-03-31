@@ -1130,7 +1130,7 @@
     }
 
     .prayer-time[data-prayer="sunrise"] {
-        background: linear-gradient(135deg, #FF9500, #ff2d00);
+        background: linear-gradient(135deg, #FF9500, #ff2d00, #ffb01f);
     }
 
     .prayer-time[data-prayer="dhuhr"] {
@@ -1167,7 +1167,7 @@
     }
 
     .current-prayer[data-prayer="sunrise"] {
-        background: linear-gradient(135deg, #FF9500, #ff2d00);
+        background: linear-gradient(135deg, #FF9500, #ff2d00, #ffb01f);
     }
 
     .current-prayer[data-prayer="dhuhr"] {
@@ -1479,7 +1479,7 @@
     }
 
     .prayer-time[data-prayer="sunrise"] {
-        background: linear-gradient(135deg, #FF9500, #ff2d00);
+        background: linear-gradient(135deg, #FF9500, #ff2d00, #ffb01f);
     }
 
     .prayer-time[data-prayer="dhuhr"] {
