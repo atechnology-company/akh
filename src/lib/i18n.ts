@@ -80,7 +80,8 @@ const additionalTranslations = {
     about_title: "About",
     unknown_location: "Location unavailable",
     prayer_times_updated: "Prayer times updated",
-    error_updating_prayer_times: "Error updating prayer times"
+    error_updating_prayer_times: "Error updating prayer times",
+    scroll_for_more: "Scroll for more"
   },
   ru: {
     greeting: "Ассаляму алейкум!",
@@ -103,7 +104,8 @@ const additionalTranslations = {
     about_title: "О приложении",
     unknown_location: "Местоположение недоступно",
     prayer_times_updated: "Время молитв обновлено",
-    error_updating_prayer_times: "Ошибка обновления времени молитв"
+    error_updating_prayer_times: "Ошибка обновления времени молитв",
+    scroll_for_more: "Прокрутите для большего"
   },
   id: {
     greeting: "Assalamualaikum!",
@@ -126,7 +128,8 @@ const additionalTranslations = {
     about_title: "Tentang",
     unknown_location: "Lokasi tidak tersedia",
     prayer_times_updated: "Waktu sholat diperbarui",
-    error_updating_prayer_times: "Gagal memperbarui waktu sholat"
+    error_updating_prayer_times: "Gagal memperbarui waktu sholat",
+    scroll_for_more: "Gulir untuk lebih banyak"
   },
   zh: {
     greeting: "安赛俩目阿莱库姆!",
@@ -149,7 +152,8 @@ const additionalTranslations = {
     about_title: "关于",
     unknown_location: "位置不可用",
     prayer_times_updated: "礼拜时间已更新",
-    error_updating_prayer_times: "更新礼拜时间失败"
+    error_updating_prayer_times: "更新礼拜时间失败",
+    scroll_for_more: "滚动查看更多"
   }
 };
 

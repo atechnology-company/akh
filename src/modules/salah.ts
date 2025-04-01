@@ -5,6 +5,7 @@
 import { browser } from '$app/environment';
 import { writable, get } from 'svelte/store';
 import { calculatePrayerTimes, getHijriDateSync, determineCalculationMethod, CALCULATION_METHODS, ASR_METHODS } from './prayerCalculation';
+import { accentColor, gradientColor } from '$lib/stores/accentColor';
 
 // Simple toast interface for notifications
 interface ToastOptions {
@@ -53,6 +54,18 @@ export const prayerTimesStore = writable<PrayerTimes | null>(null);
 export const hijriDateStore = writable<string | null>(null);
 export const locationStore = writable<Location | null>(null);
 
+// Subscribe to prayer times changes to update colors
+if (browser) {
+  console.log('Setting up prayer times subscription in salah.ts module');
+  prayerTimesStore.subscribe(value => {
+    console.log('Prayer times store updated:', value ? 'has values' : 'null');
+    if (value) {
+      console.log('Calling updateColorsBasedOnPrayerTimes from store subscriber');
+      updateColorsBasedOnPrayerTimes(value);
+    }
+  });
+}
+
 // Set default prayer settings
 export const defaultPrayerSettings = {
   method: 'MOONSIGHTING_COMMITTEE',
@@ -79,6 +92,9 @@ export type PrayerTimes = {
   maghrib: string;
   isha: string;
   midnight: string;
+  tahajjud?: string;
+  witr?: string;
+  duha?: string;
 };
 
 export type Location = {
@@ -211,6 +227,91 @@ export const getCurrentLocation = async (): Promise<Location | null> => {
   });
 };
 
+// Function to update accent and gradient colors based on prayer times
+export function updateColorsBasedOnPrayerTimes(prayerTimes: PrayerTimes) {
+  if (!browser || !prayerTimes) {
+    console.warn('Cannot update colors: browser not available or prayer times missing');
+    return;
+  }
+  
+  // Determine current prayer based on time
+  const now = new Date();
+  const currentTime = now.getHours() * 60 + now.getMinutes();
+  console.log(`Current time: ${now.getHours()}:${now.getMinutes()} (${currentTime} minutes)`);
+  
+  // Convert time string to minutes
+  const timeToMinutes = (timeStr: string) => {
+    if (!timeStr) return 0;
+    const [hours, minutes] = timeStr.split(':').map(Number);
+    return hours * 60 + minutes;
+  };
+  
+  // Define prayer order
+  const prayers = ['fajr', 'sunrise', 'dhuhr', 'asr', 'maghrib', 'isha'];
+  
+  // Log all prayer times for debugging
+  console.log('Prayer times available:', Object.entries(prayerTimes)
+    .map(([prayer, time]) => `${prayer}: ${time} (${timeToMinutes(time)} minutes)`)
+    .join(', '));
+  
+  // Store current prayer
+  let currentPrayer = 'fajr'; // Default
+  
+  // Find current prayer
+  for (let i = 0; i < prayers.length; i++) {
+    const prayer = prayers[i];
+    const prayerTimeStr = prayerTimes[prayer as keyof typeof prayerTimes];
+    if (!prayerTimeStr) continue;
+    const prayerTime = timeToMinutes(prayerTimeStr);
+    
+    if (currentTime < prayerTime) {
+      // If we're before this prayer, the previous one is current
+      currentPrayer = i === 0 ? prayers[prayers.length - 1] : prayers[i - 1];
+      console.log(`Current prayer is ${currentPrayer} because current time (${currentTime}) is before ${prayer} (${prayerTime})`);
+      break;
+    }
+  }
+  
+  // Prayer color mapping
+  const prayerColors = {
+    fajr: '#fdbb2d', // Using last color from gradient
+    sunrise: '#ffb01f',
+    dhuhr: '#0072ff',
+    asr: '#ef473a',
+    maghrib: '#b42460',
+    isha: '#2c5364',
+    tahajjud: '#7a0270',
+    witr: '#182848',
+    duha: '#ffb01f'
+  };
+
+  const prayerGradients = {
+    fajr: 'linear-gradient(135deg, #1a2a6c, #b21f1f, #fdbb2d)',
+    sunrise: 'linear-gradient(135deg, #FF9500, #ff2d00, #ffb01f)',
+    dhuhr: 'linear-gradient(135deg, #8ae068, #0072ff)',
+    asr: 'linear-gradient(135deg, #dda65e, #ef473a)',
+    maghrib: 'linear-gradient(135deg, #ef473a, #b42460)',
+    isha: 'linear-gradient(135deg, #0f2027, #203a43, #2c5364)',
+    tahajjud: 'linear-gradient(135deg, #0b122b, #3f0c41, #7a0270)',
+    witr: 'linear-gradient(135deg, #2C3E50, #4B6CB7, #182848)',
+    duha: 'linear-gradient(135deg, #FF9500, #ff2d00, #ffb01f)'
+  };
+  
+  // Get color for current prayer (with fallback)
+  const color = prayerColors[currentPrayer as keyof typeof prayerColors] || prayerColors.fajr;
+  const gradient = prayerGradients[currentPrayer as keyof typeof prayerGradients] || prayerGradients.fajr;
+  
+  // Update DOM directly for immediate effect
+  document.documentElement.style.setProperty('--accent-color', color);
+  document.documentElement.style.setProperty('--gradient-color', gradient);
+  
+  // Update stores
+  accentColor.set(color);
+  gradientColor.set(gradient);
+  
+  console.log(`Updated accent color to ${color} and gradient to ${gradient} for prayer: ${currentPrayer}`);
+}
+
 // Calculate prayer times with settings
 export async function calculatePrayerTimesWithSettings(
   latitude: number, 
@@ -233,6 +334,16 @@ export async function calculatePrayerTimesWithSettings(
       settings.method,
       settings.asrMethod
     );
+    
+    // Extended prayers calculation is causing issues in prayer lists
+    // These should be calculated only when specifically needed
+    const extendedPrayers = {
+      ...prayerTimes,
+      // Commenting out extended prayers to fix prayer list ordering
+      // tahajjud: calculateTahajjudTime(prayerTimes.isha, prayerTimes.fajr),
+      // witr: calculateWitrTime(prayerTimes.isha, prayerTimes.fajr),
+      // duha: calculateDuhaTime(prayerTimes.sunrise, prayerTimes.dhuhr)
+    };
     
     // Import the needed function
     const { getHijriDate, getHijriDateSync } = await import('./prayerCalculation');
@@ -285,12 +396,15 @@ export async function calculatePrayerTimesWithSettings(
     }
     
     // Store the results
-    prayerTimesStore.set(prayerTimes);
+    prayerTimesStore.set(extendedPrayers);
     hijriDateStore.set(hijriDate);
     locationStore.set(location);
     
+    // Update colors based on calculated prayer times
+    updateColorsBasedOnPrayerTimes(extendedPrayers);
+    
     // Return the results
-    return { prayerTimes, hijriDate, location };
+    return { prayerTimes: extendedPrayers, hijriDate, location };
   } catch (error) {
     console.error('Error calculating prayer times:', error);
     
@@ -310,7 +424,12 @@ export async function initializePrayerTimes(): Promise<void> {
   try {
     // Add mobile browser detection
     const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+    // Check specifically for Safari/WebKit
+    const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent) || 
+                    /AppleWebKit/.test(navigator.userAgent) && !/Chrome/.test(navigator.userAgent);
+    
     console.log('Browser type:', isMobile ? 'Mobile' : 'Desktop');
+    console.log('Is Safari/WebKit:', isSafari);
     console.log('User agent:', navigator.userAgent);
     
     // Load saved settings
@@ -322,49 +441,98 @@ export async function initializePrayerTimes(): Promise<void> {
     console.log("Location from store:", location);
     
     // Utility function for IP-based location
-    const getIpLocation = async () => {
+    const getIpLocation = async (): Promise<Location | null> => {
       try {
         console.log('Attempting to get IP-based location...');
-        const response = await fetch('https://ipapi.co/json/');
-        if (!response.ok) {
-          throw new Error(`HTTP error! status: ${response.status}`);
-        }
-        const data = await response.json();
-        console.log('IP location response:', data);
         
-        if (data && data.latitude && data.longitude) {
-          return {
-            latitude: data.latitude,
-            longitude: data.longitude,
-            city: data.city || 'Unknown',
-            country: data.country_name || 'Unknown',
-            timezone: -new Date().getTimezoneOffset() / 60
-          };
-        }
-      } catch (error) {
-        console.error('Error getting IP-based location:', error);
-        // Try alternative IP service as fallback
+        // Safari sometimes has issues with some APIs, so try multiple services with timeout
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 5000);
+        
         try {
-          console.log('Trying alternative IP service...');
-          const altResponse = await fetch('https://ip-api.com/json/');
-          if (!altResponse.ok) {
-            throw new Error(`HTTP error! status: ${altResponse.status}`);
-          }
-          const altData = await altResponse.json();
-          console.log('Alternative IP location response:', altData);
+          const response = await fetch('https://ipapi.co/json/', {
+            signal: controller.signal,
+            mode: 'cors',
+            headers: {
+              'Accept': 'application/json'
+            }
+          });
           
-          if (altData && altData.lat && altData.lon) {
+          clearTimeout(timeoutId);
+          
+          if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+          }
+          
+          const data = await response.json();
+          console.log('IP location response:', data);
+          
+          if (data && data.latitude && data.longitude) {
             return {
-              latitude: altData.lat,
-              longitude: altData.lon,
-              city: altData.city || 'Unknown',
-              country: altData.country || 'Unknown',
+              latitude: data.latitude,
+              longitude: data.longitude,
+              city: data.city || 'Unknown',
+              country: data.country_name || 'Unknown',
               timezone: -new Date().getTimezoneOffset() / 60
             };
           }
-        } catch (altError) {
-          console.error('Error getting alternative IP location:', altError);
+        } catch (error) {
+          console.error('Error getting IP-based location:', error);
+          // Try alternative IP service as fallback
+          try {
+            console.log('Trying alternative IP service...');
+            const altResponse = await fetch('https://ip-api.com/json/', {
+              mode: 'cors',
+              headers: {
+                'Accept': 'application/json'
+              }
+            });
+            if (!altResponse.ok) {
+              throw new Error(`HTTP error! status: ${altResponse.status}`);
+            }
+            const altData = await altResponse.json();
+            console.log('Alternative IP location response:', altData);
+            
+            if (altData && altData.lat && altData.lon) {
+              return {
+                latitude: altData.lat,
+                longitude: altData.lon,
+                city: altData.city || 'Unknown',
+                country: altData.country || 'Unknown',
+                timezone: -new Date().getTimezoneOffset() / 60
+              };
+            }
+          } catch (altError) {
+            console.error('Error getting alternative IP location:', altError);
+            
+            // Last resort - try geolocation API directly if both IP services fail
+            // This is especially important for Safari where IP services might be blocked
+            if (navigator.geolocation) {
+              try {
+                console.log('Trying direct geolocation API as last resort');
+                const position = await new Promise<GeolocationPosition>((resolve, reject) => {
+                  navigator.geolocation.getCurrentPosition(resolve, reject, {
+                    enableHighAccuracy: true,
+                    timeout: 10000,
+                    maximumAge: 0
+                  });
+                });
+                
+                return {
+                  latitude: position.coords.latitude,
+                  longitude: position.coords.longitude,
+                  city: 'Unknown',
+                  country: 'Unknown',
+                  timezone: -new Date().getTimezoneOffset() / 60
+                };
+              } catch (geoError) {
+                console.error('Direct geolocation failed too:', geoError);
+              }
+            }
+          }
         }
+      } catch (e) {
+        console.error('Error in getIpLocation:', e);
       }
       return null;
     };
@@ -416,8 +584,12 @@ export async function initializePrayerTimes(): Promise<void> {
         locationStore.set(location);
         // Save to localStorage
         if (browser) {
-          localStorage.setItem('lastKnownLocation', JSON.stringify(location));
-          console.log("Saved location to localStorage:", location);
+          try {
+            localStorage.setItem('lastKnownLocation', JSON.stringify(location));
+            console.log("Saved location to localStorage:", location);
+          } catch (e) {
+            console.error('Error saving to localStorage:', e);
+          }
         }
       }
     }
@@ -571,7 +743,10 @@ export async function refreshPrayerTimes(): Promise<void> {
     const settings = get(prayerSettingsStore);
     
     // Calculate prayer times - now location is guaranteed to be non-null
-    await calculatePrayerTimesWithSettings(location.latitude, location.longitude, settings);
+    const { prayerTimes } = await calculatePrayerTimesWithSettings(location.latitude, location.longitude, settings);
+    
+    // Ensure colors are updated
+    updateColorsBasedOnPrayerTimes(prayerTimes);
     
     // Force refresh of Hijri date to ensure it's up-to-date
     // First clear any cached value to ensure fresh calculation
@@ -634,4 +809,49 @@ export async function refreshPrayerTimes(): Promise<void> {
       }
     });
   }
+}
+
+// Helper functions for extended prayers
+function calculateTahajjudTime(isha: string, fajr: string): string {
+  const ishaTime = new Date(`1970-01-01T${isha}`);
+  const fajrTime = new Date(`1970-01-01T${fajr}`);
+  
+  // Tahajjud is recommended in the last third of the night
+  const nightDuration = fajrTime.getTime() - ishaTime.getTime();
+  const tahajjudTime = new Date(ishaTime.getTime() + (nightDuration * 2/3));
+  
+  return tahajjudTime.toLocaleTimeString('en-US', { 
+    hour12: false,
+    hour: '2-digit',
+    minute: '2-digit'
+  });
+}
+
+function calculateWitrTime(isha: string, fajr: string): string {
+  const ishaTime = new Date(`1970-01-01T${isha}`);
+  const fajrTime = new Date(`1970-01-01T${fajr}`);
+  
+  // Witr is recommended after Tahajjud or in the last third of the night
+  const nightDuration = fajrTime.getTime() - ishaTime.getTime();
+  const witrTime = new Date(ishaTime.getTime() + (nightDuration * 3/4));
+  
+  return witrTime.toLocaleTimeString('en-US', { 
+    hour12: false,
+    hour: '2-digit',
+    minute: '2-digit'
+  });
+}
+
+function calculateDuhaTime(sunrise: string, dhuhr: string): string {
+  const sunriseTime = new Date(`1970-01-01T${sunrise}`);
+  const dhuhrTime = new Date(`1970-01-01T${dhuhr}`);
+  
+  // Duha is recommended when the sun has risen to the height of a spear (about 15-20 minutes after sunrise)
+  const duhaTime = new Date(sunriseTime.getTime() + (20 * 60 * 1000)); // 20 minutes after sunrise
+  
+  return duhaTime.toLocaleTimeString('en-US', { 
+    hour12: false,
+    hour: '2-digit',
+    minute: '2-digit'
+  });
 }

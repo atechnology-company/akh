@@ -199,7 +199,7 @@ async function fetchFromSecondaryAPI(date: Date): Promise<string> {
           'Accept': 'application/json',
           'User-Agent': 'Islamic-Prayer-App'
         },
-        timeout: 5000 // 5 seconds timeout
+        signal: AbortSignal.timeout(5000) // 5 seconds timeout
       }
     );
     
@@ -216,8 +216,12 @@ async function fetchFromSecondaryAPI(date: Date): Promise<string> {
     } else {
       throw new Error('Invalid secondary API response');
     }
-  } catch (error) {
-    throw new Error(`Secondary API error: ${error.message}`);
+  } catch (error: unknown) {
+    if (error instanceof Error) {
+      throw new Error(`Secondary API error: ${error.message}`);
+    } else {
+      throw new Error('Secondary API error: Unknown error occurred');
+    }
   }
 }
 
@@ -229,6 +233,11 @@ async function fetchHijriDateFromAPI(date: Date, formattedDate: string, retries 
       throw new Error('Offline - using fallback calculation');
     }
     
+    // Check for Safari/WebKit
+    const isSafari = typeof navigator !== 'undefined' && 
+                    (/^((?!chrome|android).)*safari/i.test(navigator.userAgent) || 
+                    (/AppleWebKit/.test(navigator.userAgent) && !/Chrome/.test(navigator.userAgent)));
+    
     // Format date correctly for API: DD-MM-YYYY (API requires this format)
     const apiFormattedDate = `${date.getDate().toString().padStart(2, '0')}-${(date.getMonth() + 1).toString().padStart(2, '0')}-${date.getFullYear()}`;
     
@@ -237,7 +246,6 @@ async function fetchHijriDateFromAPI(date: Date, formattedDate: string, retries 
     
     // API with HTTPS and timeout
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 seconds timeout
     
     try {
       // Use primary endpoint (aladhan.com) with proper path parameter format
@@ -249,7 +257,10 @@ async function fetchHijriDateFromAPI(date: Date, formattedDate: string, retries 
           headers: {
             'Accept': 'application/json',
             'User-Agent': 'Islamic-Prayer-App'
-          }
+          },
+          mode: 'cors',
+          // Add cache control to prevent Safari caching issues
+          cache: isSafari ? 'no-store' : 'default'
         }
       );
       
@@ -279,48 +290,45 @@ async function fetchHijriDateFromAPI(date: Date, formattedDate: string, retries 
       // Detailed logging for debugging
       console.debug('API Response:', JSON.stringify(data, null, 2));
       
-      // Check the new structure based on the documentation
-      if (data.code === 200 && data.data && data.data.hijri) {
-        const hijri = data.data.hijri;
-        const day = parseInt(hijri.day);
-        
-        // Get month from number or use direct month name from API
-        let month = '';
-        if (hijri.month && hijri.month.en) {
-          // Use direct month name from API
-          month = hijri.month.en;
-        } else if (hijri.month && hijri.month.number) {
-          // Get from our array
-          const monthIndex = parseInt(hijri.month.number) - 1;
-          month = ISLAMIC_MONTHS[monthIndex];
-        } else {
-          throw new Error('Invalid month data in API response');
+      // Extract Hijri date from response with extensive fallbacks for different API response formats
+      let hijriDate: string | null = null;
+      
+      try {
+        // Try different paths in response, with fallbacks
+        if (data.data && data.data.hijri) {
+          // Path for aladhan.com API
+          const hijri = data.data.hijri;
+          hijriDate = `${hijri.day} ${hijri.month.en} ${hijri.year}`;
+        } else if (data.data && data.data.gregorian && data.data.gregorian.hijri) {
+          // Alternative path
+          const hijri = data.data.gregorian.hijri;
+          hijriDate = `${hijri.day} ${hijri.month} ${hijri.year}`;
+        } else if (data.hijri) {
+          // Direct hijri object
+          const hijri = data.hijri;
+          hijriDate = `${hijri.day} ${hijri.month} ${hijri.year}`;
+        } else if (data.data && typeof data.data === 'string' && data.data.includes(' ')) {
+          // For APIs that return a string directly
+          hijriDate = data.data;
         }
-        
-        const year = parseInt(hijri.year);
-        
-        // Check for holidays
-        let holidayInfo = '';
-        if (hijri.holidays && hijri.holidays.length > 0) {
-          holidayInfo = ` (${hijri.holidays[0]})`;
-        }
-        
-        const result = `${day} ${month} ${year}${holidayInfo}`;
-        
-        // Cache result
-        hijriDateCache[formattedDate] = {
-          result,
-          timestamp: Date.now()
-        };
-        
-        // Save to localStorage
-        saveHijriCache();
-        
-        return result;
-      } else {
-        console.error('Invalid API response:', data);
-        throw new Error('Invalid API response structure');
+      } catch (parseError) {
+        console.error('Error parsing Hijri date from API response:', parseError);
       }
+      
+      if (!hijriDate) {
+        throw new Error('Could not extract Hijri date from API response');
+      }
+      
+      // Cache the result
+      hijriDateCache[formattedDate] = {
+        result: hijriDate,
+        timestamp: Date.now()
+      };
+      
+      // Save to localStorage
+      saveHijriCache();
+      
+      return hijriDate;
     } catch (primaryApiError) {
       // If primary API fails and we have retries left, try the alternative API
       if (retries > 0 && HIJRI_API_ENDPOINTS.length > 1) {

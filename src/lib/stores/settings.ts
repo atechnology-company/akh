@@ -1,12 +1,12 @@
 import { writable } from 'svelte/store';
-import { CalculationMethod, HighLatitudeRule, Madhab } from 'adhan';
-import { ASR_METHODS } from '../constants';
+import type { CalculationMethod, HighLatitudeRule, Madhab } from 'adhan';
+import { ASR_METHODS } from '$lib/constants';
 
 export interface Settings {
     calculationMethod: keyof typeof CalculationMethod;
-    asrMethod: string;
     highLatitudeRule: keyof typeof HighLatitudeRule;
     madhab: keyof typeof Madhab;
+    asrMethod: keyof typeof ASR_METHODS;
     adjustments: {
         fajr: number;
         sunrise: number;
@@ -28,13 +28,14 @@ export interface Settings {
             isha: boolean;
         };
     };
+    accentColor: string;
 }
 
 export const settings = writable<Settings>({
-    calculationMethod: 'MuslimWorldLeague',
-    asrMethod: ASR_METHODS.STANDARD,
-    highLatitudeRule: 'MiddleOfTheNight',
+    calculationMethod: 'MoonsightingCommittee',
+    highLatitudeRule: 'TwilightAngle',
     madhab: 'Shafi',
+    asrMethod: 'STANDARD',
     adjustments: {
         fajr: 0,
         sunrise: 0,
@@ -55,5 +56,6 @@ export const settings = writable<Settings>({
             maghrib: true,
             isha: true
         }
-    }
+    },
+    accentColor: '#ff6600'
 }); 

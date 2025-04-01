@@ -7,17 +7,163 @@ import type {
 
 // Get environment variables from window.__ENV__ or use empty strings as fallback
 const config: Config = {
-    GOOGLE_API_KEY: (window as any).__ENV__?.GOOGLE_API_KEY || '',
-    SEARCH_ENGINE_ID: (window as any).__ENV__?.SEARCH_ENGINE_ID || '',
-    GEMINI_API_KEY: (window as any).__ENV__?.GEMINI_API_KEY || '',
+    GOOGLE_API_KEY: import.meta.env.VITE_GOOGLE_API_KEY || (window as any).__ENV__?.GOOGLE_API_KEY || '',
+    SEARCH_ENGINE_ID: import.meta.env.VITE_SEARCH_ENGINE_ID || (window as any).__ENV__?.SEARCH_ENGINE_ID || '',
+    GEMINI_API_KEY: import.meta.env.VITE_GEMINI_API_KEY || (window as any).__ENV__?.GEMINI_API_KEY || '',
     GEMINI_API_URL: 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent',
-    IS_DEV: (window as any).__ENV__?.NODE_ENV === 'development'
+    IS_DEV: import.meta.env.DEV || (window as any).__ENV__?.NODE_ENV === 'development'
 };
 
 // Function to detect if text is Arabic
 function isArabic(text: string): boolean {
     const arabicRegex = /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]/;
     return arabicRegex.test(text);
+}
+
+// Create a more robust fetch function with CORS handling
+async function fetchWithCORSHandling(url: string, options: RequestInit = {}): Promise<Response> {
+    // Default options with CORS support
+    const defaultOptions: RequestInit = {
+        mode: 'cors',
+        credentials: 'omit',
+        cache: 'no-store', // Avoid caching issues
+        headers: {
+            'Accept': 'application/json, text/html, text/plain, */*',
+            'Origin': window.location.origin,
+            'Referer': window.location.origin
+        }
+    };
+
+    // Merge with provided options
+    const fetchOptions: RequestInit = {
+        ...defaultOptions,
+        ...options,
+        headers: {
+            ...defaultOptions.headers,
+            ...(options.headers || {})
+        }
+    };
+
+    // First, try a quick no-cors HEAD request to see if we can access at all
+    // This won't produce console errors but gives us a hint if CORS issues exist
+    try {
+        await fetch(url, {
+            method: 'HEAD', 
+            mode: 'no-cors',
+            cache: 'no-store'
+        });
+        
+        // If no error during HEAD request with no-cors, we can try real request
+        // If HEAD did work, there's still no guarantee the main request will work
+        console.log(`HEAD request to ${url} was successful, attempting main request`);
+    } catch (headError) {
+        console.log(`HEAD request to ${url} failed, will likely need proxy`, headError);
+        // If even HEAD fails, go straight to proxy to avoid console errors
+        return await fetchWithProxy(url, fetchOptions);
+    }
+
+    try {
+        // Next, try direct fetch
+        const response = await fetch(url, fetchOptions);
+        return response;
+    } catch (error) {
+        // Check for specific CORS errors
+        if (error instanceof TypeError && 
+           (error.message.includes('networkerror') || 
+            error.message.includes('Network request failed') ||
+            error.message.includes('CORS') ||
+            error.message.includes('cross-origin'))) {
+            
+            console.error('CORS error detected:', error);
+        }
+        
+        // For all errors, fall back to proxy to handle properly
+        return await fetchWithProxy(url, fetchOptions);
+    }
+}
+
+// Helper function to fetch using a proxy
+async function fetchWithProxy(url: string, options: RequestInit = {}): Promise<Response> {
+    // Initialize a custom Response object in case all proxies fail
+    let fallbackResponseData = {
+        title: new URL(url).hostname,
+        content: `Failed to fetch content from ${url} due to CORS restrictions. Please refer to the original website.`,
+        url: url
+    };
+    
+    // Try using a CORS proxy as fallback
+    // Only for GET requests - proxies typically don't work well with POST
+    if (options.method === 'GET' || !options.method) {
+        try {
+            const publicProxies = [
+                'https://corsproxy.io/?',
+                'https://api.allorigins.win/raw?url=',
+                'https://thingproxy.freeboard.io/fetch/',
+                'https://api.codetabs.com/v1/proxy?quest='
+            ];
+            
+            // Try each proxy until one works
+            for (const proxyPrefix of publicProxies) {
+                try {
+                    console.log(`Attempting CORS proxy: ${proxyPrefix}${url}`);
+                    const proxyUrl = `${proxyPrefix}${encodeURIComponent(url)}`;
+                    
+                    // When using a proxy, we need to modify some headers
+                    const proxyOptions = { ...options };
+                    delete proxyOptions.mode; // Proxy handles CORS
+                    
+                    const proxyResponse = await fetch(proxyUrl, proxyOptions);
+                    console.log('CORS proxy successful:', proxyPrefix);
+                    return proxyResponse;
+                } catch (proxyError) {
+                    console.warn(`Proxy ${proxyPrefix} failed:`, proxyError);
+                    // Continue to next proxy
+                }
+            }
+            
+            // Try one last approach with mode: 'no-cors'
+            // Note: This will result in an "opaque" response with limited access
+            try {
+                console.log('Attempting no-cors mode as last resort');
+                const noCorsFetchOptions = { ...options, mode: 'no-cors' as RequestMode };
+                
+                // This will yield an opaque response with limited functionality
+                // we're creating a synthetic successful response since we can't actually
+                // read the content of an opaque response
+                await fetch(url, noCorsFetchOptions);
+                
+                // Since we can't read the response, we'll return a synthetic one
+                // with a warning message that instructs users to visit the site
+                return new Response(JSON.stringify({
+                    success: false,
+                    isOpaque: true,
+                    message: 'Content not available due to CORS restrictions',
+                    originalUrl: url
+                }), {
+                    status: 200,
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-Content-Source': 'synthetic-response',
+                        'Access-Control-Allow-Origin': '*'
+                    }
+                });
+            } catch (noCorsError) {
+                console.error('no-cors approach failed:', noCorsError);
+            }
+        } catch (allProxiesFailed) {
+            console.error('All CORS proxies failed');
+        }
+    }
+    
+    // Create a synthetic Response if all approaches failed
+    return new Response(JSON.stringify(fallbackResponseData), {
+        status: 200,
+        headers: {
+            'Content-Type': 'application/json',
+            'X-Content-Source': 'fallback',
+            'Access-Control-Allow-Origin': '*'
+        }
+    });
 }
 
 // Process content without summarization
@@ -164,6 +310,58 @@ async function generateOptimizedQueriesForTopic(query: string, definitionMode = 
     }
 }
 
+// Check for common indicators of scraping restrictions in robots.txt or site policies
+async function checkRobotsRestrictions(url: string): Promise<boolean> {
+    try {
+        const hostname = new URL(url).hostname;
+        const robotsUrl = `https://${hostname}/robots.txt`;
+        
+        // Try to check robots.txt with a simple no-cors request first
+        try {
+            // Use no-cors to prevent console errors
+            await fetch(robotsUrl, {
+                mode: 'no-cors',
+                cache: 'no-store'
+            });
+            
+            // We can't read the response in no-cors mode, so just assume
+            // this site might have restrictions to be safe
+            return true;
+        } catch (error) {
+            // If even no-cors fails, the site is likely down or unreachable
+            console.log(`No-cors request to robots.txt failed for ${hostname}`);
+        }
+        
+        return false;
+    } catch (error) {
+        return false;
+    }
+}
+
+// Get alternative content approach for sites with access issues
+async function getAlternativeContent(item: any): Promise<string> {
+    let content = '';
+    
+    // Use any available data from the search results
+    if (item.snippet) {
+        content = item.snippet;
+    }
+    
+    // Add information from meta tags if available
+    if (item.pagemap?.metatags?.length > 0) {
+        const description = item.pagemap.metatags[0]['og:description'] || 
+                           item.pagemap.metatags[0].description;
+        if (description && description.length > 20) {
+            content += "\n\n" + description;
+        }
+    }
+    
+    // Add a disclaimer
+    content += `\n\nNote: Full content from ${item.title} could not be accessed directly. For complete information, please visit the original source at ${item.link}`;
+    
+    return content;
+}
+
 // Search and fetch content with a status callback
 export async function searchAndFetchContent(
     originalQuery: string,
@@ -190,9 +388,9 @@ export async function searchAndFetchContent(
             }
 
             try {
-                // API call to Google Custom Search
+                // API call to Google Custom Search with CORS handling
                 const searchUrl = `https://www.googleapis.com/customsearch/v1?key=${config.GOOGLE_API_KEY}&cx=${config.SEARCH_ENGINE_ID}&q=${encodeURIComponent(query)}`;
-                const searchResponse = await fetch(searchUrl);
+                const searchResponse = await fetchWithCORSHandling(searchUrl);
                 
                 if (!searchResponse.ok) {
                     console.error(`Search error: ${searchResponse.status} ${searchResponse.statusText}`);
@@ -233,47 +431,176 @@ export async function searchAndFetchContent(
                         let content = '';
                         let fetchSuccessful = false;
                         
-                        // Try to fetch content with timeout to avoid long-running fetches
+                        // For certain sites, robots.txt check can trigger unnecessary CORS errors in console
+                        // So we'll make this check optional
+                        let skipRobotsCheck = false;
+                        
                         try {
-                            const controller = new AbortController();
-                            const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 second timeout
-                            
-                            const html = await fetch(item.link, {
-                                method: 'GET',
-                                mode: 'cors',
-                                signal: controller.signal,
-                                headers: {
-                                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-                                    'Accept-Language': 'en-US,en;q=0.5',
-                                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-                                    'Cache-Control': 'no-cache'
-                                }
-                            }).then(response => {
-                                clearTimeout(timeoutId);
-                                if (!response.ok) throw new Error(`HTTP error: ${response.status}`);
-                                return response.text();
+                            // Try a quick HEAD request with no-cors mode to detect potential CORS issues
+                            // without generating console errors
+                            await fetch(item.link, {
+                                method: 'HEAD',
+                                mode: 'no-cors',
+                                cache: 'no-store'
                             });
-
-                            if (html) {
-                                const doc = new DOMParser().parseFromString(html, 'text/html');
-                                const selectors = [
-                                    '.content', 'article', 'main', '.entry-content', 
-                                    '.post-content', '#content', '.article-content',
-                                    '.fatwa-text', '.answer', '.question-answer'
-                                ];
+                        } catch (headError) {
+                            console.log(`HEAD request to ${item.link} failed, will skip robots check`);
+                            skipRobotsCheck = true;
+                        }
+                        
+                        // Skip robots check if the HEAD request failed (likely CORS issues)
+                        if (!skipRobotsCheck && await checkRobotsRestrictions(item.link)) {
+                            console.log(`Site with potential scraping restrictions: ${item.link}`);
+                            content = await getAlternativeContent(item);
+                            fetchSuccessful = true;
+                        } else {
+                            // Try to fetch content with timeout and CORS handling
+                            try {
+                                // Set up timeout controller
+                                const controller = new AbortController();
+                                const timeoutId = setTimeout(() => controller.abort(), 7000); // 7 second timeout (increased for stability)
                                 
-                                for (const selector of selectors) {
-                                    const element = doc.querySelector(selector);
-                                    if (element?.textContent) {
-                                        content = element.textContent.trim();
-                                        fetchSuccessful = true;
-                                        break;
+                                // Prepare fetch options with CORS handling
+                                const fetchOptions = {
+                                    method: 'GET',
+                                    signal: controller.signal,
+                                    headers: {
+                                        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+                                        'Accept-Language': 'en-US,en;q=0.5',
+                                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+                                        'Cache-Control': 'no-cache',
+                                        'Referer': 'https://www.google.com/'  // Adding referer can help with some sites
+                                    }
+                                };
+                                
+                                // Attempt to fetch with our enhanced function
+                                const response = await fetchWithCORSHandling(item.link, fetchOptions);
+                                clearTimeout(timeoutId);
+                                
+                                // Handle response based on status and content type
+                                if (!response.ok && response.status !== 200) {
+                                    throw new Error(`HTTP error: ${response.status}`);
+                                }
+                                
+                                // Check if this is one of our synthetic responses
+                                const contentType = response.headers.get('Content-Type');
+                                const isProxyResponse = response.headers.get('X-Content-Source') === 'synthetic-response' || 
+                                                       response.headers.get('X-Content-Source') === 'fallback';
+                                
+                                if (isProxyResponse || (contentType && contentType.includes('application/json'))) {
+                                    try {
+                                        const jsonData = await response.json();
+                                        
+                                        if (jsonData.isOpaque || !jsonData.success) {
+                                            console.log('Received synthetic response due to access restrictions');
+                                            content = `Content from ${item.title} could not be accessed directly. Please visit the original source at ${item.link}`;
+                                            
+                                            // Add disclaimer
+                                            content += `\n\nNote: This website restricts external access to its content. The information below is a summary from search results.`;
+                                            
+                                            // Add any available snippet content
+                                            if (item.snippet) {
+                                                content += `\n\n${item.snippet}`;
+                                            }
+                                            
+                                            fetchSuccessful = true;
+                                        } else if (jsonData.content) {
+                                            // We have JSON content from our fallback
+                                            content = jsonData.content;
+                                            fetchSuccessful = true;
+                                        }
+                                    } catch (jsonError) {
+                                        console.warn('Error parsing JSON from proxy response:', jsonError);
+                                    }
+                                } else {
+                                    // Regular HTML response
+                                    const html = await response.text();
+
+                                    if (html) {
+                                        try {
+                                            const doc = new DOMParser().parseFromString(html, 'text/html');
+                                            const selectors = [
+                                                '.content', 'article', 'main', '.entry-content', 
+                                                '.post-content', '#content', '.article-content',
+                                                '.fatwa-text', '.answer', '.question-answer',
+                                                // Add more generic selectors that might contain main content
+                                                '.main-content', '.page-content', '.body-content',
+                                                '[role="main"]', '[role="article"]', '[itemprop="articleBody"]',
+                                                '.post', '.article', '.blog-post'
+                                            ];
+                                            
+                                            for (const selector of selectors) {
+                                                const element = doc.querySelector(selector);
+                                                if (element?.textContent) {
+                                                    content = element.textContent.trim();
+                                                    fetchSuccessful = true;
+                                                    break;
+                                                }
+                                            }
+                                                    
+                                            // If no content found with selectors, try body as fallback
+                                            if (!content && doc.body?.textContent) {
+                                                // For body content, try to be smarter about extraction
+                                                // Remove headers, footers, navigation, etc.
+                                                const elementsToRemove = [
+                                                    'header', 'footer', 'nav', 'aside', '.sidebar', 
+                                                    '.navigation', '.menu', '.comments', '.ads', 
+                                                    'script', 'style', 'noscript'
+                                                ];
+                                                
+                                                // Create a clone of body to modify
+                                                const bodyClone = doc.body.cloneNode(true) as HTMLElement;
+                                                
+                                                // Remove unwanted elements from clone
+                                                elementsToRemove.forEach(selector => {
+                                                    bodyClone.querySelectorAll(selector).forEach(el => {
+                                                        if (el.parentNode) {
+                                                            el.parentNode.removeChild(el);
+                                                        }
+                                                    });
+                                                });
+                                                
+                                                // Get text from cleaned body
+                                                content = bodyClone.textContent?.trim() || '';
+                                                
+                                                // Limit length to avoid enormous content
+                                                if (content.length > 15000) {
+                                                    content = content.substring(0, 15000) + '... (content truncated)';
+                                                }
+                                                
+                                                fetchSuccessful = true;
+                                            }
+                                        } catch (parseError) {
+                                            console.error('Error parsing HTML:', parseError);
+                                            // If HTML parsing fails, use the raw HTML text as fallback
+                                            if (html.length > 0) {
+                                                // Extract readable text using regex to remove HTML tags
+                                                const textContent = html.replace(/<[^>]*>/g, ' ')
+                                                                       .replace(/\s+/g, ' ')
+                                                                       .trim();
+                                                
+                                                // Limit length
+                                                content = textContent.substring(0, 10000);
+                                                fetchSuccessful = true;
+                                            }
+                                        }
                                     }
                                 }
+                            } catch (error) {
+                                console.log(`Fetch failed for ${item.link}: ${error instanceof Error ? error.message : 'Unknown error'}.`);
+                                
+                                if (error instanceof Error) {
+                                    if (error.message.includes('CORS')) {
+                                        console.warn(`CORS error detected for ${item.link}`);
+                                    } else if (error.message.includes('aborted')) {
+                                        console.warn(`Request timeout for ${item.link}`);
+                                    }
+                                }
+                                
+                                // Always try to get alternative content when fetch fails
+                                content = await getAlternativeContent(item);
+                                fetchSuccessful = true;
                             }
-                        } catch (error) {
-                            console.log(`Fetch failed for ${item.link}: ${error instanceof Error ? error.message : 'Unknown error'}. Using snippet instead.`);
-                            // Fall back to snippet
                         }
 
                         // Use snippet as fallback
@@ -419,7 +746,7 @@ export async function generateWithGemini(
             throw new Error('Invalid prompt: Must provide a non-empty string');
         }
 
-        // Use environment variable or fallback to default (remove hardcoded key)
+        // Use environment variable or fallback to default
         const apiKey = config.GEMINI_API_KEY || '';
         if (!apiKey) {
             throw new Error('Missing Gemini API key');
@@ -442,27 +769,42 @@ export async function generateWithGemini(
             }
         };
         
-        // Make API request
-        const response = await fetch(`${url}?key=${apiKey}`, {
+        // Make API request with CORS handling
+        const fetchOptions: RequestInit = {
             method: 'POST',
             headers: {
-                'Content-Type': 'application/json'
+                'Content-Type': 'application/json',
+                'X-Goog-Api-Key': apiKey,
+                'X-Goog-FieldMask': 'candidates.content.parts'
             },
             body: JSON.stringify(requestBody)
-        });
+        };
         
-        if (!response.ok) {
-            const errorText = await response.text();
-            throw new Error(`Gemini API error: ${response.status} - ${errorText || response.statusText}`);
+        try {
+            const response = await fetchWithCORSHandling(`${url}?key=${apiKey}`, fetchOptions);
+            
+            if (!response.ok) {
+                const errorText = await response.text();
+                throw new Error(`Gemini API error: ${response.status} - ${errorText || response.statusText}`);
+            }
+            
+            const data = await response.json();
+            
+            if (!data?.candidates?.[0]?.content?.parts?.[0]?.text) {
+                throw new Error('Invalid response from Gemini API');
+            }
+            
+            return data.candidates[0].content.parts[0].text;
+        } catch (error) {
+            // Check if it's a CORS error
+            if (error instanceof Error && error.message.includes('CORS')) {
+                console.error('CORS error with Gemini API. Trying alternative approach...');
+                
+                // Try JSON-P style approach as fallback (this won't work for POST, but it's a demo)
+                throw new Error('CORS error with Gemini API. Please check your API setup');
+            }
+            throw error;
         }
-        
-        const data = await response.json();
-        
-        if (!data?.candidates?.[0]?.content?.parts?.[0]?.text) {
-            throw new Error('Invalid response from Gemini API');
-        }
-        
-        return data.candidates[0].content.parts[0].text;
     } catch (error) {
         console.error('Gemini API error:', error);
         throw error instanceof Error ? error : new Error('Unknown error during API call');

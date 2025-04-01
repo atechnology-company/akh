@@ -4,16 +4,20 @@
     import { fade, fly, slide } from 'svelte/transition';
     import { tweened } from 'svelte/motion';
     import { cubicOut } from 'svelte/easing';
+    import { browser } from '$app/environment';
     import about from '../components/about.svelte';
     import qibla from '../components/qibla.svelte';
     import salah from '../components/salah.svelte';
     import alif from '../components/alif.svelte';
+    import { accentColor, gradientColor } from '$lib/stores/accentColor';
+    import { prayerTimesStore, initializePrayerTimes, refreshPrayerTimes } from '../modules/salah';
 
     let pages = [about, qibla, salah, alif];
     let pageNames = ['ABOUT', 'QIBLA', 'SALAH', 'ALIF'];
     let currentPageIndex = 2;
     let previousPageIndex = 2;
     let slideDirection = 1; // 1 = right, -1 = left
+    let currentPrayer: string = 'fajr';
     
     // Store nav button elements and their positions
     let navButtons: HTMLButtonElement[] = [];
@@ -31,24 +35,135 @@
     let swipeProgress = 0;
     let swipeTarget = 0;
 
-    // Update indicator position based on active button
-    function updateIndicatorPosition() {
-        if (navButtons[currentPageIndex]) {
-            const button = navButtons[currentPageIndex];
-            const rect = button.getBoundingClientRect();
-            const parentRect = button.parentElement!.getBoundingClientRect();
+    // Subscribe to prayer times to get current prayer
+    const unsubscribePrayerTimes = prayerTimesStore.subscribe(value => {
+        if (!value) return;
+        
+        // Get current prayer based on time
+        const now = new Date();
+        const currentTime = now.getHours() * 60 + now.getMinutes();
+        
+        const timeToMinutes = (timeStr: string) => {
+            if (!timeStr) return 0;
+            const [hours, minutes] = timeStr.split(':').map(Number);
+            return hours * 60 + minutes;
+        };
+        
+        // Define prayer order
+        const prayers = ['fajr', 'sunrise', 'dhuhr', 'asr', 'maghrib', 'isha'];
+        
+        // Find current prayer
+        for (let i = 0; i < prayers.length; i++) {
+            const prayer = prayers[i];
+            const prayerTimeStr = value[prayer as keyof typeof value];
+            if (!prayerTimeStr) continue;
+            const prayerTime = timeToMinutes(prayerTimeStr);
             
-            indicatorPosition.set({
-                left: rect.left - parentRect.left,
-                width: rect.width
-            });
+            if (currentTime < prayerTime) {
+                // If we're before this prayer, the previous one is current
+                currentPrayer = i === 0 ? prayers[prayers.length - 1] : prayers[i - 1];
+                console.log(`Page component: Current prayer is ${currentPrayer}`);
+                break;
+            }
+        }
+    });
+
+    // Function to load prayer times if they're not already loaded
+    async function loadPrayerTimes() {
+        if (browser && (!$prayerTimesStore || Object.keys($prayerTimesStore).length === 0)) {
+            console.log('Loading prayer times...');
+            try {
+                await initializePrayerTimes();
+                console.log('Prayer times loaded successfully');
+                updateColorsBasedOnCurrentPrayer();
+            } catch (error) {
+                console.error('Failed to load prayer times:', error);
+                // Retry after a short delay
+                setTimeout(async () => {
+                    try {
+                        console.log('Retrying prayer times load...');
+                        await refreshPrayerTimes();
+                        updateColorsBasedOnCurrentPrayer();
+                    } catch (e) {
+                        console.error('Retry failed:', e);
+                    }
+                }, 3000);
+            }
+        } else {
+            console.log('Prayer times already loaded');
+            updateColorsBasedOnCurrentPrayer();
         }
     }
     
-    function checkMobile() {
-        isMobile = window.innerWidth <= 768;
+    // Helper function to update colors based on current prayer
+    function updateColorsBasedOnCurrentPrayer() {
+        if (!currentPrayer) return;
+        
+        // Update accent color based on current prayer
+        const prayerColors = {
+            fajr: '#fdbb2d', // Using last color from gradient
+            sunrise: '#ffb01f',
+            dhuhr: '#0072ff',
+            asr: '#ef473a',
+            maghrib: '#b42460',
+            isha: '#2c5364'
+        } as const;
+
+        const prayerGradients = {
+            fajr: 'linear-gradient(135deg, #1a2a6c, #b21f1f, #fdbb2d)',
+            sunrise: 'linear-gradient(135deg, #FF9500, #ff2d00, #ffb01f)',
+            dhuhr: 'linear-gradient(135deg, #8ae068, #0072ff)',
+            asr: 'linear-gradient(135deg, #dda65e, #ef473a)',
+            maghrib: 'linear-gradient(135deg, #ef473a, #b42460)',
+            isha: 'linear-gradient(135deg, #0f2027, #203a43, #2c5364)'
+        } as const;
+        
+        // Set the colors immediately in CSS variables
+        if (browser) {
+            const accentColorValue = prayerColors[currentPrayer as keyof typeof prayerColors] || prayerColors.dhuhr;
+            const gradientValue = prayerGradients[currentPrayer as keyof typeof prayerGradients] || prayerGradients.dhuhr;
+            
+            console.log(`Updating colors for prayer: ${currentPrayer}`);
+            console.log(`Accent color: ${accentColorValue}`);
+            console.log(`Gradient: ${gradientValue}`);
+            
+            // Add RGB values for animations
+            const hexToRgb = (hex: string) => {
+                // Remove the # if present
+                hex = hex.replace(/^#/, '');
+                
+                // Parse as RGB
+                const r = parseInt(hex.substring(0, 2), 16);
+                const g = parseInt(hex.substring(2, 4), 16);
+                const b = parseInt(hex.substring(4, 6), 16);
+                
+                return `${r}, ${g}, ${b}`;
+            };
+            
+            document.documentElement.style.setProperty('--accent-color', accentColorValue);
+            document.documentElement.style.setProperty('--gradient-color', gradientValue);
+            document.documentElement.style.setProperty('--accent-color-rgb', hexToRgb(accentColorValue));
+            
+            // Extract gradient colors for gradient-color-1, gradient-color-2, etc.
+            const extractGradientColors = (gradientString: string): string[] => {
+                const hexRegex = /#[0-9A-Fa-f]{6}/g;
+                const matches = gradientString.match(hexRegex) || [];
+                return matches.slice(0, 3);
+            };
+            
+            const gradientColors = extractGradientColors(gradientValue);
+            if (gradientColors.length > 0) {
+                document.documentElement.style.setProperty('--gradient-color-1', gradientColors[0] || accentColorValue);
+                document.documentElement.style.setProperty('--gradient-color-2', gradientColors[1] || accentColorValue);
+                document.documentElement.style.setProperty('--gradient-color-3', gradientColors[2] || accentColorValue);
+            }
+            
+            // Update the stores as well
+            accentColor.set(accentColorValue);
+            gradientColor.set(gradientValue);
+        }
     }
-    
+
     onMount(() => {
         // Load saved page from localStorage on mount
         const savedPage = localStorage.getItem('akhLastPage');
@@ -66,9 +181,15 @@
         
         checkMobile();
         window.addEventListener('resize', checkMobile);
-        
+
+        // Load prayer times after a small delay
+        setTimeout(async () => {
+            await loadPrayerTimes();
+        }, 500);
+
         return () => {
             window.removeEventListener('resize', checkMobile);
+            unsubscribePrayerTimes();
         };
     });
 
@@ -175,15 +296,41 @@
     const hideHeader = () => {
         isHeaderVisible = false;
     };
+
+    function updateIndicatorPosition() {
+        if (navButtons[currentPageIndex]) {
+            const button = navButtons[currentPageIndex];
+            const rect = button.getBoundingClientRect();
+            const parentRect = button.parentElement!.getBoundingClientRect();
+            
+            indicatorPosition.set({
+                left: rect.left - parentRect.left,
+                width: rect.width
+            });
+        }
+    }
+    
+    function checkMobile() {
+        isMobile = window.innerWidth <= 768;
+    }
 </script>
 
 <svelte:head>
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Onest:wght@400;700&family=Chivo+Mono:wght@400;700&display=swap">
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" />
     <link rel="stylesheet" href="https://fonts.googleapis.com/icon?family=Material+Icons">
+    <title>akh</title>
 </svelte:head>
 
 <style>
+    :global(:root) {
+        --accent-color: #0072ff; /* Default to dhuhr color */
+        --gradient-color: linear-gradient(135deg, #8ae068, #0072ff); /* Default to dhuhr gradient */
+        --gradient-color-1: #8ae068;
+        --gradient-color-2: #0072ff;
+        --gradient-color-3: #0072ff;
+    }
+
     :global(body) {
         margin: 0;
         padding: 0;

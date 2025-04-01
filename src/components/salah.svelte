@@ -3,7 +3,8 @@
     import { browser } from '$app/environment';
     import { 
         prayerTimesStore, hijriDateStore, locationStore, prayerSettingsStore,
-        initializePrayerTimes, refreshPrayerTimes, type PrayerTimes, type Location
+        initializePrayerTimes, refreshPrayerTimes, type PrayerTimes, type Location,
+        updateColorsBasedOnPrayerTimes
     } from '../modules/salah';
     import { t } from '$lib/i18n';
     import { fade } from 'svelte/transition';
@@ -128,7 +129,7 @@
         return `${lastThirdHours.toString().padStart(2, '0')}:${lastThirdMins.toString().padStart(2, '0')}`;
     }
     
-    function updatePrayerStatus() {
+    export function updatePrayerStatus() {
         const now = new Date();
         const currentTime = now.getHours() * 60 + now.getMinutes();
         
@@ -198,6 +199,7 @@
                 .map(([prayer]) => prayer);
         }
         
+        // Update time until next prayer
         updateTimeRemaining();
     }
 
@@ -222,7 +224,9 @@
             nextPrayerTime = timeToMinutes(calculateMidnight(prayerTimes.isha, prayerTimes.fajr));
         } else {
             // For standard prayer times, access from prayerTimes object
-            nextPrayerTime = timeToMinutes(prayerTimes[nextPrayer as keyof PrayerTimes]);
+            const prayerTimeStr = prayerTimes[nextPrayer as keyof PrayerTimes];
+            if (!prayerTimeStr) return;
+            nextPrayerTime = timeToMinutes(prayerTimeStr);
         }
         
         let diff = nextPrayerTime - currentTime;
@@ -362,20 +366,43 @@
     // Function to load cached data from localStorage
     function loadCachedData() {
         try {
-            const cached = localStorage.getItem('prayer_cache');
+            // Check if localStorage is available
+            if (!browser || typeof localStorage === 'undefined') {
+                return false;
+            }
+            
+            // Add a try-catch around localStorage access which can fail in Safari Private mode
+            let cached;
+            try {
+                cached = localStorage.getItem('prayer_cache');
+            } catch (storageError) {
+                console.error('Error accessing localStorage:', storageError);
+                return false;
+            }
+            
             if (cached) {
-                const parsedCache = JSON.parse(cached);
-                // Check if cache is still valid (less than 24 hours old)
-                if (parsedCache && parsedCache.timestamp && 
-                    (Date.now() - parsedCache.timestamp < 24 * 60 * 60 * 1000)) {
-                    const data = parsedCache.data;
-                    // Use cached data immediately while fresh data loads
-                    if (data) {
-                        prayerTimes = data.prayerTimes;
-                        hijriDate = data.hijriDate;
-                        location = data.location;
-                        isLoading = false; // Stop showing loading indicator if we have cached data
-                        return true;
+                try {
+                    const parsedCache = JSON.parse(cached);
+                    // Check if cache is still valid (less than 24 hours old)
+                    if (parsedCache && parsedCache.timestamp && 
+                        (Date.now() - parsedCache.timestamp < 24 * 60 * 60 * 1000)) {
+                        const data = parsedCache.data;
+                        // Use cached data immediately while fresh data loads
+                        if (data && data.prayerTimes && data.hijriDate && data.location) {
+                            prayerTimes = data.prayerTimes;
+                            hijriDate = data.hijriDate;
+                            location = data.location;
+                            isLoading = false; // Stop showing loading indicator if we have cached data
+                            return true;
+                        }
+                    }
+                } catch (parseError) {
+                    console.error('Error parsing cached prayer data:', parseError);
+                    // If there was an error parsing, try to clean up the corrupted cache
+                    try {
+                        localStorage.removeItem('prayer_cache');
+                    } catch (e) {
+                        // Ignore errors when cleaning cache
                     }
                 }
             }
@@ -388,14 +415,34 @@
     
     // Function to save data to cache
     function saveCacheData(data: {prayerTimes: PrayerTimes, hijriDate: string, location: Location}) {
+        if (!browser || typeof localStorage === 'undefined') {
+            return;
+        }
+        
         try {
             const cacheObject = {
                 timestamp: Date.now(),
                 data: data
             };
-            localStorage.setItem('prayer_cache', JSON.stringify(cacheObject));
+            
+            try {
+                localStorage.setItem('prayer_cache', JSON.stringify(cacheObject));
+            } catch (storageError) {
+                // Handle Safari private browsing mode or quota errors
+                console.error('Error saving to localStorage:', storageError);
+                
+                // Try to recover by clearing some space
+                try {
+                    // Remove non-essential cached items
+                    localStorage.removeItem('salahComponentVisited');
+                    // Try again
+                    localStorage.setItem('prayer_cache', JSON.stringify(cacheObject));
+                } catch (retryError) {
+                    console.error('Failed to save cache even after clearing space:', retryError);
+                }
+            }
         } catch (e) {
-            console.error('Error saving prayer data to cache:', e);
+            console.error('Error preparing prayer data cache:', e);
         }
     }
     
@@ -519,43 +566,87 @@
     async function initializePrayerTimesData() {
         try {
             isLoading = true;
+            isInitialLoad = true;
             error = null;
             
-            // Try to load from cache first
-            const hasCachedData = loadCachedData();
+            // Check for Safari/WebKit browser
+            const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent) || 
+                            (/AppleWebKit/.test(navigator.userAgent) && !/Chrome/.test(navigator.userAgent));
             
-            // If no cache, initialize from module
-            if (!hasCachedData) {
-                // Subscribe to stores to get prayer times data
-                const unsubscribePrayerTimes = prayerTimesStore.subscribe((value) => {
-                    if (value) prayerTimes = value;
-                });
-                
-                const unsubscribeHijriDate = hijriDateStore.subscribe((value) => {
-                    if (value) hijriDate = value;
-                });
-                
-                const unsubscribeLocation = locationStore.subscribe((value) => {
-                    if (value) location = value;
-                });
-                
-                // Initialize prayer times from the module
+            console.log('Initializing prayer times data, Safari/WebKit detected:', isSafari);
+            
+            // Try to load from cache first
+            const cacheLoaded = loadCachedData();
+            console.log('Cache loaded:', cacheLoaded);
+            
+            // Even if cache is loaded, we'll fetch fresh data too but won't show loading indicator
+            if (cacheLoaded) {
+                isLoading = false;
+            }
+            
+            try {
                 await initializePrayerTimes();
+                console.log('Prayer times initialization successful');
                 
-                // Still load fresh data in background
-                isLoadingNew = true;
-                updatePrayerTimes();
+                // Try to ensure colors are updated based on prayer times
+                if ($prayerTimesStore && typeof updateColorsBasedOnPrayerTimes === 'function') {
+                    console.log('Forcing color update from salah component');
+                    updateColorsBasedOnPrayerTimes($prayerTimesStore);
+                }
+                
+                prayerTimes = $prayerTimesStore || prayerTimes;
+                hijriDate = $hijriDateStore || '';
+                location = $locationStore;
+                
+                updatePrayerStatus();
+                
+                // Start periodic time update
+                if (updateInterval) {
+                    clearInterval(updateInterval);
+                }
+                
+                updateInterval = setInterval(() => {
+                    updateTimeRemaining();
+                }, 60000); // Update every minute
+                
+                isLoading = false;
+                
+                // Trigger fade-in sequence for initial load
+                if (isInitialLoad) {
+                    setTimeout(() => {
+                        isInitialLoad = false;
+                    }, 300);
+                }
+                
+                // Save successful data to cache
+                if (prayerTimes && hijriDate && location) {
+                    saveCacheData({
+                        prayerTimes,
+                        hijriDate,
+                        location
+                    });
+                }
+            } catch (initError) {
+                console.error('Error initializing prayer times:', initError);
+                
+                // If we already loaded from cache, don't show error
+                if (!cacheLoaded) {
+                    isLoading = false;
+                    error = 'Failed to load prayer times. Please check your internet connection and try again.';
+                } else {
+                    // We have cached data, so don't show error
+                    isLoading = false;
+                    
+                    // Schedule a retry for fresh data in the background
+                    setTimeout(() => {
+                        refreshPrayerTimesData(true); // silent refresh
+                    }, 5000);
+                }
             }
         } catch (err) {
-            error = err instanceof Error ? err.message : 'An unknown error occurred';
-            console.error('Error getting prayer times:', err);
-        } finally {
             isLoading = false;
-            
-            // After a short delay, remove the initial load state for smooth animation
-            setTimeout(() => {
-                isInitialLoad = false;
-            }, 300);
+            error = 'Failed to load prayer times. Please check your internet connection and try again.';
+            console.error('Error in prayer times initialization process:', err);
         }
     }
 
@@ -579,6 +670,9 @@
             // Set flag for next time
             localStorage.setItem('salahComponentVisited', 'true');
         }
+        
+        // Update prayer status
+        updatePrayerStatus();
         
         window.addEventListener('wheel', handleScroll);
         window.addEventListener('resize', checkMobile);
@@ -608,6 +702,49 @@
             }
         };
     });
+    
+    // Function to update colors based on current prayer was here, but now handled by salah.ts
+
+    // Function to refresh prayer times data
+    async function refreshPrayerTimesData(silent = false) {
+        try {
+            if (!silent) {
+                isLoading = true;
+            }
+            
+            console.log('Refreshing prayer times data, silent mode:', silent);
+            
+            await refreshPrayerTimes();
+            
+            // Update component data with fresh data from stores
+            prayerTimes = $prayerTimesStore || prayerTimes;
+            hijriDate = $hijriDateStore || hijriDate;
+            location = $locationStore || location;
+            
+            // Update prayer status
+            updatePrayerStatus();
+            
+            // Save refreshed data to cache
+            if (prayerTimes && hijriDate && location) {
+                saveCacheData({
+                    prayerTimes,
+                    hijriDate,
+                    location
+                });
+                console.log('Prayer times data refreshed and cached');
+            }
+            
+            if (!silent) {
+                isLoading = false;
+            }
+        } catch (err) {
+            console.error('Error refreshing prayer times data:', err);
+            if (!silent) {
+                isLoading = false;
+                error = 'Failed to refresh prayer times. Please try again later.';
+            }
+        }
+    }
 </script>
 
 <div class="layout" class:fullscreen={isFullscreen} class:extended={isExtendedView} class:transitioning={isTransitioning} class:initial-load={isInitialLoad}
@@ -641,7 +778,12 @@
                 <div class="header-top">
                     <p class="hijri">{hijriDate}</p>
                     <div class="buttons-container">
-                        <button class="icon-btn reload-btn" on:click={updatePrayerTimes} aria-label="Reload location" disabled={isRefreshing}>
+                        <button class="icon-btn reload-btn" on:click={() => {
+                            isRefreshing = true;
+                            refreshPrayerTimesData(false).finally(() => {
+                                isRefreshing = false;
+                            });
+                        }} aria-label="Reload location" disabled={isRefreshing}>
                             <span class="material-symbols-rounded">{isRefreshing ? 'sync' : 'refresh'}</span>
                         </button>
                         <button class="icon-btn settings-btn" on:click={() => showSettings = true} aria-label="Settings">
@@ -1030,7 +1172,7 @@
         <div class="settings-modal" transition:fade={{duration: 300}}>
             <div class="settings-modal-content">
                 <button class="close-button" on:click={() => showSettings = false}>&times;</button>
-                <h2>Prayer Settings</h2>
+                <h2></h2>
                 <PrayerSettings on:save={handleSettingsSave} />
             </div>
         </div>
@@ -1378,6 +1520,7 @@
         border-radius: 0 8px 8px 0;
         overflow: hidden;
         transform: translateZ(0);
+        isolation: isolate; /* Create new stacking context */
     }
     
     .layout.mobile .prayer-list {
@@ -1391,7 +1534,7 @@
         width: 100%;
         height: 100%;
         background-color: rgba(0, 0, 0, 0.6);
-        z-index: 1;
+        z-index: 2;
         pointer-events: none;
         display: block;
     }
@@ -1408,7 +1551,7 @@
         overflow-y: auto;
         overflow-x: hidden;
         position: relative;
-        z-index: 2;
+        z-index: 1; 
         scrollbar-width: none;
         -ms-overflow-style: none;
         transform: translateZ(0);
@@ -2021,7 +2164,7 @@
     }
     
     .settings-modal-content {
-        background-color: #1e1e1e;
+        background: linear-gradient(135deg, rgba(0, 0, 0, 0.95), rgba(0, 0, 0, 0.85));
         border-radius: 12px;
         width: 90%;
         max-width: 500px;
@@ -2030,13 +2173,17 @@
         padding: 24px;
         position: relative;
         box-shadow: 0 5px 30px rgba(0, 0, 0, 0.5);
+        backdrop-filter: blur(10px);
     }
     
     .settings-modal-content h2 {
         margin-top: 0;
-        color: white;
+        color: var(--accent-color);
         text-align: center;
         margin-bottom: 20px;
+        font-weight: 300;
+        text-transform: lowercase;
+        letter-spacing: 0.05em;
     }
     
     .close-button {
@@ -2045,14 +2192,17 @@
         right: 15px;
         background: none;
         border: none;
-        color: white;
+        color: var(--accent-color);
         font-size: 24px;
         cursor: pointer;
         transition: all 0.2s;
+        opacity: 0.8;
     }
     
     .close-button:hover {
         transform: scale(1.2);
+        color: white;
+        opacity: 1;
     }
 
     .location-wrapper {
@@ -2283,5 +2433,28 @@
             transform: translateX(0);
             opacity: 1;
         }
+    }
+
+    /* Settings button styling */
+    .settings-btn {
+        background: rgba(255, 255, 255, 0.1);
+        border: none;
+        color: white;
+        cursor: pointer;
+        width: 36px;
+        height: 36px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transition: all 0.2s ease;
+        padding: 0;
+        backdrop-filter: blur(4px);
+    }
+    
+    .settings-btn:hover {
+        color: var(--accent-color);
+        transform: translateY(-2px);
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
     }
 </style>
