@@ -16,29 +16,32 @@ interface ToastInterface {
   push(message: string, options?: ToastOptions): void;
 }
 
-// Default toast implementation (console fallback)
+// Default toast implementation (DOM-based)
 const defaultToast: ToastInterface = {
-  push: (message: string) => {
-    console.log('[Toast]', message);
+  push: (message: string, options?: ToastOptions) => {
+    if (!browser) return;
+    
+    try {
+      const toast = document.createElement('div');
+      toast.className = 'toast';
+      if (options?.theme?.['--toastBackground'] === '#F56565') {
+        toast.classList.add('error');
+      }
+      toast.textContent = message;
+      document.body.appendChild(toast);
+      
+      // Remove after 3 seconds
+      setTimeout(() => {
+        toast.remove();
+      }, 3000);
+    } catch (e) {
+      console.error('Error showing toast:', e);
+    }
   }
 };
 
 // Create a store for the toast functionality
 const toastStore = writable<ToastInterface>(defaultToast);
-
-// Initialize toast in browser environment
-if (browser) {
-  // This is a side effect, not a module import
-  const script = document.createElement('script');
-  script.onload = () => {
-    // Once loaded, update the toast store
-    if (window && (window as any).toast) {
-      toastStore.set((window as any).toast);
-    }
-  };
-  script.src = '/toast-shim.js'; // A small shim that would expose the toast API
-  document.head.appendChild(script);
-}
 
 // Helper function to use toast
 function showToast(message: string, options?: ToastOptions): void {

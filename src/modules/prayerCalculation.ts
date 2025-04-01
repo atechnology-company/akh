@@ -578,15 +578,21 @@ export function calculatePrayerTimes(
     console.log(`asrMethod = "${asrMethod}", ASR_METHODS.HANAFI = "${ASR_METHODS.HANAFI}"`);
     params.madhab = Madhab.Hanafi;
   } else {
-    console.log('Using Standard Asr method - Madhab.Shafi\'i (Shafi\'i, Maliki, Hanbali)');
+    console.log('Using Standard Asr method - Madhab.Shafi (Shafi\'i, Maliki, Hanbali)');
     console.log(`asrMethod = "${asrMethod}", ASR_METHODS.STANDARD = "${ASR_METHODS.STANDARD}"`);
-    params.madhab = Madhab.Shafii;
+    params.madhab = Madhab.Shafi;
+  }
+  
+  // Ensure madhab is set before proceeding
+  if (!params.madhab) {
+    console.warn('Madhab was not set, defaulting to Shafi');
+    params.madhab = Madhab.Shafi;
   }
   
   console.log('Final prayer calculation parameters:', JSON.stringify(params, null, 2));
   console.log('Madhab setting:', params.madhab);
   console.log('Madhab.Hanafi =', Madhab.Hanafi);
-  console.log('Madhab.Shafii =', Madhab.Shafii);
+  console.log('Madhab.Shafi =', Madhab.Shafi);
   
   // Calculate prayer times with Adhan
   const prayerTimes = new AdhanPrayerTimes(coordinates, date, params);

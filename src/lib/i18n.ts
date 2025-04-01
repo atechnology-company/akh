@@ -78,7 +78,9 @@ const additionalTranslations = {
     qibla_title: "Qibla Direction",
     qibla_degrees: "degrees",
     about_title: "About",
-    unknown_location: "Location unavailable"
+    unknown_location: "Location unavailable",
+    prayer_times_updated: "Prayer times updated",
+    error_updating_prayer_times: "Error updating prayer times"
   },
   ru: {
     greeting: "Ассаляму алейкум!",
@@ -99,7 +101,9 @@ const additionalTranslations = {
     qibla_title: "Направление Киблы",
     qibla_degrees: "градусов",
     about_title: "О приложении",
-    unknown_location: "Местоположение недоступно"
+    unknown_location: "Местоположение недоступно",
+    prayer_times_updated: "Время молитв обновлено",
+    error_updating_prayer_times: "Ошибка обновления времени молитв"
   },
   id: {
     greeting: "Assalamualaikum!",
@@ -120,7 +124,9 @@ const additionalTranslations = {
     qibla_title: "Arah Kiblat",
     qibla_degrees: "derajat",
     about_title: "Tentang",
-    unknown_location: "Lokasi tidak tersedia"
+    unknown_location: "Lokasi tidak tersedia",
+    prayer_times_updated: "Waktu sholat diperbarui",
+    error_updating_prayer_times: "Gagal memperbarui waktu sholat"
   },
   zh: {
     greeting: "安赛俩目阿莱库姆!",
@@ -141,7 +147,9 @@ const additionalTranslations = {
     qibla_title: "朝向麦加的方向",
     qibla_degrees: "度",
     about_title: "关于",
-    unknown_location: "位置不可用"
+    unknown_location: "位置不可用",
+    prayer_times_updated: "礼拜时间已更新",
+    error_updating_prayer_times: "更新礼拜时间失败"
   }
 };
 
@@ -199,7 +207,7 @@ const prayerNames = {
 
 // Create a translation function that handles both Paraglide and custom translations
 export const t = (key: string): string => {
-  // Получаем текущий язык более надежно
+  // Get current language more reliably
   const lang = getInitialLanguage();
   console.log(`Translating key "${key}" with language "${lang}"`);
   
@@ -248,14 +256,14 @@ export const t = (key: string): string => {
   }
   
   // Then check if the key exists in paraglide
-  // @ts-ignore
-  const messageFunction = paraglideMessages && typeof paraglideMessages === 'object' ? (paraglideMessages as any)[key] : null;
-  if (typeof messageFunction === 'function') {
-    try {
-      return messageFunction();
-    } catch (e) {
+  try {
+    // @ts-ignore
+    const messageFunction = paraglideMessages && typeof paraglideMessages === 'object' ? (paraglideMessages as any)[key] : null;
+    if (typeof messageFunction === 'function') {
       return messageFunction();
     }
+  } catch (e) {
+    console.warn(`Error accessing paraglide message for key "${key}":`, e);
   }
   
   // If not found, return the key itself

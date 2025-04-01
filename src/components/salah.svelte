@@ -39,6 +39,8 @@
     let timeRemaining = '';
     let isFullscreen = false;
     let scrollTimeout: NodeJS.Timeout;
+    let touchTimeout: NodeJS.Timeout;
+    let updateInterval: NodeJS.Timeout;
     let isTransitioning = false;
     let isInitialLoad = true;
     let fadeState = "visible"; // "visible", "hidden", "fading-in", "fading-out"
@@ -46,7 +48,6 @@
     let isMobile = false;
     let startY = 0;
     let startX = 0;
-    let touchTimeout: NodeJS.Timeout;
     let isFirstVisit = true; // Track whether this is the first visit
     let showSettings = false;
     let isExtendedView = false; // Track extended state
@@ -237,15 +238,16 @@
 
     $: if (prayerTimes.fajr) {
         updatePrayerStatus();
-        const interval = setInterval(() => {
+        // Clear any existing interval
+        if (updateInterval) {
+            clearInterval(updateInterval);
+        }
+        // Set new interval
+        updateInterval = setInterval(() => {
             updatePrayerStatus();
         }, 60000);
         
         document.documentElement.style.setProperty('--passed-count', passedPrayers.length.toString());
-        
-        onMount(() => {
-            return () => clearInterval(interval); // Cleanup interval on component unmount
-        });
     }
 
     function checkMobile() {
@@ -470,15 +472,16 @@
             // Show success toast
             if (browser) {
                 try {
-                    const toast = (window as any).toast;
-                    if (toast) {
-                        toast.push('Prayer times updated', {
-                            theme: {
-                                '--toastBackground': '#48BB78',
-                                '--toastBarBackground': '#2F855A'
-                            }
-                        });
-                    }
+                    // Create a simple toast element
+                    const toast = document.createElement('div');
+                    toast.className = 'toast';
+                    toast.textContent = t('prayer_times_updated');
+                    document.body.appendChild(toast);
+                    
+                    // Remove after 3 seconds
+                    setTimeout(() => {
+                        toast.remove();
+                    }, 3000);
                 } catch (e) {
                     console.error('Error showing toast:', e);
                 }
@@ -489,15 +492,15 @@
             // Show error toast
             if (browser) {
                 try {
-                    const toast = (window as any).toast;
-                    if (toast) {
-                        toast.push('Error updating prayer times', {
-                            theme: {
-                                '--toastBackground': '#F56565',
-                                '--toastBarBackground': '#C53030'
-                            }
-                        });
-                    }
+                    const toast = document.createElement('div');
+                    toast.className = 'toast error';
+                    toast.textContent = t('error_updating_prayer_times');
+                    document.body.appendChild(toast);
+                    
+                    // Remove after 3 seconds
+                    setTimeout(() => {
+                        toast.remove();
+                    }, 3000);
                 } catch (e) {
                     console.error('Error showing toast:', e);
                 }
@@ -583,10 +586,26 @@
         window.addEventListener('touchmove', handleTouchMove, { passive: true });
         
         return () => {
+            // Clean up all event listeners
             window.removeEventListener('wheel', handleScroll);
             window.removeEventListener('resize', checkMobile);
             window.removeEventListener('touchstart', handleTouchStart);
             window.removeEventListener('touchmove', handleTouchMove);
+            
+            // Clear all timeouts
+            clearTimeout(scrollTimeout);
+            clearTimeout(touchTimeout);
+            
+            // Clear the update interval
+            if (updateInterval) {
+                clearInterval(updateInterval);
+            }
+            
+            // Remove the material icons font link if it exists
+            const materialIconsLink = document.getElementById('material-icons-font');
+            if (materialIconsLink) {
+                materialIconsLink.remove();
+            }
         };
     });
 </script>
@@ -2236,5 +2255,33 @@
     
     .layout.fullscreen.extended .prayer-time[data-prayer="last-third"] {
         background: linear-gradient(135deg, #2C3E50, #4B6CB7, #182848);
+    }
+
+    .toast {
+        position: fixed;
+        bottom: 20px;
+        right: 20px;
+        background-color: #48BB78;
+        color: white;
+        padding: 12px 24px;
+        border-radius: 4px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+        z-index: 1000;
+        animation: slideIn 0.3s ease-out;
+    }
+
+    .toast.error {
+        background-color: #F56565;
+    }
+
+    @keyframes slideIn {
+        from {
+            transform: translateX(100%);
+            opacity: 0;
+        }
+        to {
+            transform: translateX(0);
+            opacity: 1;
+        }
     }
 </style>
