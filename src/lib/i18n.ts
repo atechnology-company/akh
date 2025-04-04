@@ -219,11 +219,18 @@ export const t = (key: string): string => {
   const parts = key.split('.');
   if (parts.length > 1 && parts[0] === 'prayer_names') {
     const prayerName = parts[1];
-    return prayerNames[lang as keyof typeof prayerNames]?.[prayerName as keyof (typeof prayerNames)['en']] || prayerName;
+    // Handle the case where first-third is passed instead of first_third
+    const normalizedPrayerName = prayerName === 'first-third' ? 'first_third' : 
+                                prayerName === 'last-third' ? 'last_third' : prayerName;
+    return prayerNames[lang as keyof typeof prayerNames]?.[normalizedPrayerName as keyof (typeof prayerNames)['en']] || prayerName;
   }
   
+  // Normalize keys with hyphens to underscores for prayer time names
+  const normalizedKey = key === 'first-third' ? 'first_third' : 
+                        key === 'last-third' ? 'last_third' : key;
+  
   // For regular keys, first check our additionalTranslations
-  const additional = additionalTranslations[lang as keyof typeof additionalTranslations]?.[key as keyof (typeof additionalTranslations)['en']];
+  const additional = additionalTranslations[lang as keyof typeof additionalTranslations]?.[normalizedKey as keyof (typeof additionalTranslations)['en']];
   if (additional) {
     return additional;
   }
