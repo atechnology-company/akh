@@ -1,4 +1,4 @@
-# akh 0.1.3-alpha
+# akh 0.1.4-alpha
 the utilitarian muslim companion
 
 written in svelte with help from [adhan](https://github.com/batoulapps/adhan-js)([MIT](https://raw.githubusercontent.com/batoulapps/Adhan/refs/heads/master/LICENSE)), [al adhan api](https://aladhan.com/) for hijri date and [nativescript for mobile](https://nativescript.org/)

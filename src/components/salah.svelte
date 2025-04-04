@@ -11,7 +11,7 @@
     import PrayerSettings from './prayerSettings.svelte';
     
     // Extended types for night prayer times
-    type ExtendedPrayers = keyof PrayerTimes | 'tahajjud' | 'last-third';
+    type ExtendedPrayers = keyof PrayerTimes | 'first-third' | 'tahajjud';
     
     let prayerTimes: PrayerTimes = {
         fajr: '',
@@ -148,8 +148,8 @@
         // Note: We don't add this to the main prayerTimes object to avoid modifying it
         const allPrayerTimes = {
             ...prayerTimes,
-            tahajjud: firstThird,   // First third of the night
-            'last-third': lastThird // Last third of the night
+            'first-third' : firstThird,   // First third of the night
+            'tahajjud': lastThird // Last third of the night
         };
 
         // Get all prayers sorted by time
@@ -216,9 +216,9 @@
         // Need to handle special case for non-standard prayer times
         let nextPrayerTime: number;
         
-        if (nextPrayer === 'tahajjud') {
+        if (nextPrayer === 'first-third') {
             nextPrayerTime = timeToMinutes(calculateFirstThird(prayerTimes.isha, prayerTimes.fajr));
-        } else if (nextPrayer === 'last-third') {
+        } else if (nextPrayer === 'tahajjud') {
             nextPrayerTime = timeToMinutes(calculateLastThird(prayerTimes.isha, prayerTimes.fajr));
         } else if (nextPrayer === 'midnight') {
             nextPrayerTime = timeToMinutes(calculateMidnight(prayerTimes.isha, prayerTimes.fajr));
@@ -799,8 +799,8 @@
                 <div class="countdown">
                     <p class="time">{timeRemaining}</p>
                     <p class="subtitle">{t('until')} {
-                        nextPrayer === 'tahajjud' ? t('prayer_names.first_third') :
-                        nextPrayer === 'last-third' ? t('prayer_names.last_third') :
+                        nextPrayer === 'first-third' ? t('prayer_names.first_third') :
+                        nextPrayer === 'tahajjud' ? t('prayer_names.last_third') :
                         t(`prayer_names.${nextPrayer}`)
                     }</p>
                 </div>
@@ -809,8 +809,8 @@
                 <div class="prayer-details">
                     <h2>{t(`prayer_names.${currentPrayer}`)}</h2>
                     <p class="time">{
-                        currentPrayer === 'tahajjud' ? calculateFirstThird(prayerTimes.isha, prayerTimes.fajr) :
-                        currentPrayer === 'last-third' ? calculateLastThird(prayerTimes.isha, prayerTimes.fajr) :
+                        currentPrayer === 'first-third' ? calculateFirstThird(prayerTimes.isha, prayerTimes.fajr) :
+                        currentPrayer === 'tahajjud' ? calculateLastThird(prayerTimes.isha, prayerTimes.fajr) :
                         prayerTimes[currentPrayer as keyof PrayerTimes]
                     }</p>
                 </div>
@@ -858,7 +858,7 @@
                                 {/if}
                             </div>
                         </div>
-                        <div class="prayer-time" data-prayer="tahajjud" style="--index: 1">
+                        <div class="prayer-time" data-prayer="first-third" style="--index: 1">
                             <div class="prayer-list-info">
                                 {#if isMobile}
                                     <p class="prayer-name">{t('prayer_names.first_third')}</p>
@@ -873,7 +873,7 @@
                                 {/if}
                             </div>
                         </div>
-                        <div class="prayer-time" data-prayer="last-third" style="--index: 2">
+                        <div class="prayer-time" data-prayer="tahajjud" style="--index: 2">
                             <div class="prayer-list-info">
                                 {#if isMobile}
                                     <p class="prayer-name">{t('prayer_names.last_third')}</p>
@@ -905,7 +905,7 @@
                         </div>
                     {:else if currentPrayer === 'midnight'}
                         <!-- Show appropriate prayers after midnight: last third and fajr -->
-                        <div class="prayer-time" data-prayer="last-third" style="--index: 0">
+                        <div class="prayer-time" data-prayer="tahajjud" style="--index: 0">
                             <div class="prayer-list-info">
                                 {#if isMobile}
                                     <p class="prayer-name">{t('prayer_names.last_third')}</p>
@@ -935,7 +935,7 @@
                                 {/if}
                             </div>
                         </div>
-                    {:else if currentPrayer === 'tahajjud'}
+                    {:else if currentPrayer === 'first-third'}
                         <!-- Show appropriate prayers after first third: midnight, last third and fajr -->
                         <div class="prayer-time" data-prayer="midnight" style="--index: 0">
                             <div class="prayer-list-info">
@@ -952,7 +952,7 @@
                                 {/if}
                             </div>
                         </div>
-                        <div class="prayer-time" data-prayer="last-third" style="--index: 1">
+                        <div class="prayer-time" data-prayer="tahajjud" style="--index: 1">
                             <div class="prayer-list-info">
                                 {#if isMobile}
                                     <p class="prayer-name">{t('prayer_names.last_third')}</p>
@@ -988,7 +988,7 @@
                             .filter(([prayer]) => {
                                 // Skip specific prayers based on current prayer time
                                 if (prayer === 'midnight' && currentPrayer !== 'isha' && 
-                                    currentPrayer !== 'tahajjud' && currentPrayer !== 'last-third') return false;
+                                    currentPrayer !== 'first-third' && currentPrayer !== 'tahajjud') return false;
                                 
                                 // Define prayer order (fajr first)
                                 const prayerOrder = ['fajr', 'sunrise', 'dhuhr', 'asr', 'maghrib', 'isha', 'midnight'];
@@ -1093,7 +1093,7 @@
                         {/each}
                         
                         <!-- First third of night -->
-                        <div class="prayer-time fullscreen" data-prayer="tahajjud" style="--index: {Object.keys(prayerTimes || {}).filter(p => p !== 'midnight').length}">
+                        <div class="prayer-time fullscreen" data-prayer="first-third" style="--index: {Object.keys(prayerTimes || {}).filter(p => p !== 'midnight').length}">
                             <div class="prayer-list-info">
                                 <p class="prayer-name">{t('prayer_names.first_third')}</p>
                                 <div class="time-display">
@@ -1113,7 +1113,7 @@
                         </div>
                         
                         <!-- Last third of night -->
-                        <div class="prayer-time fullscreen" data-prayer="last-third" style="--index: {Object.keys(prayerTimes || {}).filter(p => p !== 'midnight').length + 2}">
+                        <div class="prayer-time fullscreen" data-prayer="tahajjud" style="--index: {Object.keys(prayerTimes || {}).filter(p => p !== 'midnight').length + 2}">
                             <div class="prayer-list-info">
                                 <p class="prayer-name">{t('prayer_names.last_third')}</p>
                                 <div class="time-display">
@@ -1314,11 +1314,11 @@
         background: linear-gradient(135deg, #222222, #000000, #505050);
     }
 
-    .prayer-time[data-prayer="tahajjud"] {
+    .prayer-time[data-prayer="first-third"] {
         background: linear-gradient(135deg, #0b122b, #3f0c41, #7a0270);
     }
 
-    .prayer-time[data-prayer="last-third"] {
+    .prayer-time[data-prayer="tahajjud"] {
         background: linear-gradient(135deg, #2C3E50, #4B6CB7, #182848);
     }
 
@@ -1351,11 +1351,11 @@
         background: linear-gradient(135deg, #222222, #000000, #505050);
     }
 
-    .current-prayer[data-prayer="tahajjud"] {
+    .current-prayer[data-prayer="first-third"] {
         background: linear-gradient(135deg, #0b122b, #3f0c41, #7a0270);
     }
 
-    .current-prayer[data-prayer="last-third"] {
+    .current-prayer[data-prayer="tahajjud"] {
         background: linear-gradient(135deg, #2C3E50, #4B6CB7, #182848);
     }
 
@@ -1664,11 +1664,11 @@
         background: linear-gradient(135deg, #222222, #000000, #505050);
     }
 
-    .prayer-time[data-prayer="tahajjud"] {
+    .prayer-time[data-prayer="first-third"] {
         background: linear-gradient(135deg, #0b122b, #3f0c41, #7a0270);
     }
 
-    .prayer-time[data-prayer="last-third"] {
+    .prayer-time[data-prayer="tahajjud"] {
         background: linear-gradient(135deg, #2C3E50, #4B6CB7, #182848);
     }
 
@@ -2395,7 +2395,7 @@
         background: linear-gradient(135deg, #FF9500, #ff2d00, #ffb01f);
     }
     
-    .layout.fullscreen.extended .prayer-time[data-prayer="tahajjud"] {
+    .layout.fullscreen.extended .prayer-time[data-prayer="first-third"] {
         background: linear-gradient(135deg, #0b122b, #3f0c41, #7a0270);
     }
     
@@ -2403,7 +2403,7 @@
         background: linear-gradient(135deg, #222222, #000000, #505050);
     }
     
-    .layout.fullscreen.extended .prayer-time[data-prayer="last-third"] {
+    .layout.fullscreen.extended .prayer-time[data-prayer="tahajjud"] {
         background: linear-gradient(135deg, #2C3E50, #4B6CB7, #182848);
     }
 
