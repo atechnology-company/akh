@@ -1,5 +1,5 @@
 [build]
-  command = "npm run webbuild"
+  command = "npm run web:build"
   publish = "build"
   functions = "functions"
   
@@ -8,6 +8,7 @@
 
 [functions]
   directory = "functions"
+  node_bundler = "esbuild"
 
 [[headers]]
   for = "/manifest.webmanifest"
@@ -32,4 +33,4 @@
 [[headers]]
   for = "/*.html"
   [headers.values]
-    Cache-Control = "public, max-age=0, must-revalidate" 
+    Cache-Control = "public, max-age=0, must-revalidate"
