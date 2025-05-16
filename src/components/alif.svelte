@@ -6,6 +6,8 @@
   import { marked } from 'marked';
   import { t, currentLanguage } from '$lib/i18n';
   import autosize from 'autosize';
+  import { goto } from '$app/navigation';
+  import ApiKeyModal from './apiKeyModal.svelte';
 
   // Define type for autosize with update method
   type AutosizeType = {
@@ -33,6 +35,16 @@
   let topScrollIndicator: HTMLDivElement;
   let bottomScrollIndicator: HTMLDivElement;
 
+  // API key management
+  let showApiKeyModal = false;
+  let savedApiKey = '';
+  
+  // Settings navigation - open local settings modal instead of navigating away
+  function navigateToSettings() {
+    // Instead of navigating to external page, open the API key modal
+    openApiKeyModal();
+  }
+  
   // Create component data object for passing to UI functions
   const componentData: AlifComponentData = {
     promptInput: null,
@@ -42,6 +54,34 @@
     isInputPage: true,
     loadingOverlay: null
   };
+  
+  // Function to open API key modal
+  function openApiKeyModal() {
+    // Try to get saved API key from localStorage
+    const storedApiKey = localStorage.getItem('gemini_api_key') || '';
+    savedApiKey = storedApiKey;
+    showApiKeyModal = true;
+  }
+  
+  // Function to handle API key save from modal
+  function handleApiKeySave(event: CustomEvent<string>) {
+    const apiKey = event.detail;
+    if (apiKey) {
+      localStorage.setItem('gemini_api_key', apiKey);
+      savedApiKey = apiKey;
+      
+      // Update the config in plates-engine
+      if (typeof window !== 'undefined') {
+        PlatesEngine.updateApiKey(savedApiKey);
+      }
+    }
+    showApiKeyModal = false;
+  }
+  
+  // Function to handle modal close
+  function handleApiKeyModalClose() {
+    showApiKeyModal = false;
+  }
 
   // Subscribe to language changes
   const unsubscribe = currentLanguage.subscribe(lang => {
@@ -594,6 +634,9 @@
   <div id="typing-tip" class="hidden" bind:this={typingTip}>
     {t('press_enter')}
   </div>
+  <button class="settings-button" on:click={navigateToSettings} aria-label="Settings">
+    <span class="settings-icon">⚙️</span>
+  </button>
 </div>
 
 <div id="result-page" class="page" class:active={!isInputPage} 
@@ -721,6 +764,15 @@
     {/if}
   </div>
 </div>
+
+{#if showApiKeyModal}
+  <ApiKeyModal 
+    showModal={showApiKeyModal}
+    apiKey={savedApiKey} 
+    on:save={handleApiKeySave} 
+    on:close={handleApiKeyModalClose} 
+  />
+{/if}
 
 <style>
   :global(.material-symbols-rounded) {
@@ -1754,6 +1806,56 @@
     :global(.inline-reference) {
       white-space: normal;
       display: inline-block;
+    }
+  }
+  
+  /* Settings button */
+  .settings-button {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    width: 50px;
+    height: 50px;
+    border-radius: 50%;
+    background: rgba(0, 0, 0, 0.1);
+    border: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    z-index: 100;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+  }
+  
+  .settings-button:hover {
+    background: rgba(0, 0, 0, 0.2);
+    transform: scale(1.1);
+  }
+  
+  .settings-icon {
+    font-size: 24px;
+  }
+  
+  @media (max-width: 768px) {
+    .settings-button {
+      width: 45px;
+      height: 45px;
+      bottom: 15px;
+      right: 15px;
+    }
+  }
+  
+  @media (max-width: 480px) {
+    .settings-button {
+      width: 40px;
+      height: 40px;
+      bottom: 10px;
+      right: 10px;
+    }
+    
+    .settings-icon {
+      font-size: 20px;
     }
   }
 </style>

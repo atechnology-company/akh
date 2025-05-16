@@ -9,10 +9,18 @@ import type {
 const config: Config = {
     GOOGLE_API_KEY: import.meta.env.VITE_GOOGLE_API_KEY || (window as any).__ENV__?.GOOGLE_API_KEY || '',
     SEARCH_ENGINE_ID: import.meta.env.VITE_SEARCH_ENGINE_ID || (window as any).__ENV__?.SEARCH_ENGINE_ID || '',
-    GEMINI_API_KEY: import.meta.env.VITE_GEMINI_API_KEY || (window as any).__ENV__?.GEMINI_API_KEY || '',
+    GEMINI_API_KEY: import.meta.env.VITE_GEMINI_API_KEY || (window as any).__ENV__?.GEMINI_API_KEY || localStorage.getItem('gemini_api_key') || '',
     GEMINI_API_URL: 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent',
     IS_DEV: import.meta.env.DEV || (window as any).__ENV__?.NODE_ENV === 'development'
 };
+
+// Function to update the Gemini API key at runtime
+export function updateApiKey(newApiKey: string): void {
+    if (newApiKey && typeof newApiKey === 'string') {
+        config.GEMINI_API_KEY = newApiKey;
+        console.log('Gemini API key updated');
+    }
+}
 
 // Function to detect if text is Arabic
 function isArabic(text: string): boolean {

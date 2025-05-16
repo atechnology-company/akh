@@ -1,8 +1,8 @@
 // This file injects environment variables into the client-side code for Netlify deployment
 
-exports.handler = async function(event, context) {
+export const handler = async function(event, context) {
   // Get the HTML content from the SvelteKit render function
-  const { handler } = await import('../build/handler.js');
+  const { handler } = await import('../build/.netlify/functions-internal/render.mjs');
   const response = await handler(event, context);
   
   // Only process HTML responses
