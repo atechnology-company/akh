@@ -2,7 +2,7 @@
 
 export const handler = async function(event, context) {
   // Get the HTML content from the SvelteKit render function
-  const { handler } = await import('.netlify/functions-internal/render.js');
+  const { handler } = await import('../.netlify/functions-internal/sveltekit-render.mjs');
   const response = await handler(event, context);
   
   // Only process HTML responses
