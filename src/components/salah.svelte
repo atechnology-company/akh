@@ -1502,8 +1502,8 @@
     }
 
     .prayer-details .time {
-        font-size: 3.5rem;
-        font-weight: 200;
+        font-size: 5rem;
+        font-weight: 700;
         color: rgba(255, 255, 255, var(--text-opacity));
         margin: 0;
         line-height: 1;
@@ -1617,6 +1617,7 @@
     .prayer-time {
         position: relative;
         overflow: hidden;
+        min-height: 140px;
     }
     
     /* Fullscreen prayer time styles */
@@ -1685,7 +1686,7 @@
         flex-direction: column;
         justify-content: space-between;
         align-items: flex-start;
-        padding: 1rem;
+        padding: 1.5rem;
         background-color: rgba(0, 0, 0, 0.5);
         backdrop-filter: blur(10px);
         height: auto;
@@ -1719,6 +1720,7 @@
     .layout.mobile .prayer-time:not(.fullscreen) .prayer-name {
         position: static;
         font-size: 1.5rem;
+        font-weight: 600;
         text-align: left;
         margin: 0;
         order: 1; /* Force name to left */
@@ -1746,6 +1748,7 @@
     
     .prayer-time.fullscreen .prayer-name {
         font-size: 2.5rem;
+        font-weight: 600;
         position: static;
         order: 1; /* Name on left */
         margin: 0;
@@ -1762,7 +1765,8 @@
     }
     
     .prayer-time.fullscreen .time {
-        font-size: 2.5rem;
+        font-size: 5rem;
+        font-weight: 700;
         line-height: 1;
         margin-right: 2rem;
     }
@@ -2291,8 +2295,8 @@
     }
     
     .prayer-time .time {
-        font-size: 3rem;
-        font-weight: 200;
+        font-size: 5rem;
+        font-weight: 700;
         color: rgba(255, 255, 255, var(--text-opacity));
         margin: 0;
     }

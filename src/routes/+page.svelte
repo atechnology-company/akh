@@ -5,18 +5,29 @@
     import { tweened } from 'svelte/motion';
     import { cubicOut } from 'svelte/easing';
     import { browser } from '$app/environment';
+    import mosques from '../components/mosques.svelte';
     import about from '../components/about.svelte';
     import qibla from '../components/qibla.svelte';
     import salah from '../components/salah.svelte';
     import alif from '../components/alif.svelte';
+    import { goto } from '$app/navigation';
     import { accentColor, gradientColor } from '$lib/stores/accentColor';
     import { prayerTimesStore, initializePrayerTimes, refreshPrayerTimes } from '../modules/salah';
 
-    let pages = [about, qibla, salah, alif];
-    let pageNames = ['ABOUT', 'QIBLA', 'SALAH', 'ALIF'];
-    let currentPageIndex = 2;
+    // Create separate arrays for desktop and mobile
+    let allPages = [about, mosques, qibla, salah, alif];
+    let allPageNames = ['ABOUT', 'MOSQUES', 'QIBLA', 'SALAH', 'ALIF'];
+    
+    // Dynamically set pages based on device
+    $: pages = isMobile ? allPages.filter(page => page !== mosques) : allPages;
+    $: pageNames = isMobile ? allPageNames.filter(name => name !== 'MOSQUES') : allPageNames;
+    
+    let currentPageIndex = 3;
     let previousPageIndex = 2;
     let slideDirection = 1; // 1 = right, -1 = left
+    function navigateToMosquesPage() {
+        goto('/mosques');
+    }
     let currentPrayer: string = 'fajr';
     
     // Store nav button elements and their positions
@@ -194,12 +205,15 @@
     });
 
     const setPage = (index: number) => {
-        slideDirection = index > currentPageIndex ? 1 : -1;
-        previousPageIndex = currentPageIndex;
-        currentPageIndex = index;
-        updateIndicatorPosition();
-        // Save current page to localStorage
-        localStorage.setItem('akhLastPage', currentPageIndex.toString());
+        // Ensure index is valid for current page array
+        if (index >= 0 && index < pages.length) {
+            slideDirection = index > currentPageIndex ? 1 : -1;
+            previousPageIndex = currentPageIndex;
+            currentPageIndex = index;
+            updateIndicatorPosition();
+            // Save current page to localStorage
+            localStorage.setItem('akhLastPage', currentPageIndex.toString());
+        }
     };
 
     const nextPage = () => {
@@ -311,7 +325,25 @@
     }
     
     function checkMobile() {
-        isMobile = window.innerWidth <= 768;
+        const wasMobile = isMobile;
+        isMobile = window.innerWidth < 768;
+        
+        // If transitioning between mobile and desktop, adjust current page index
+        if (wasMobile !== isMobile) {
+            // If switching to mobile and current page is mosques, change to a different page
+            if (isMobile && allPages[currentPageIndex] === mosques) {
+                // Default to salah page when mosque tab is hidden
+                const salahIndex = pages.findIndex(page => page === salah);
+                if (salahIndex >= 0) {
+                    currentPageIndex = salahIndex;
+                } else {
+                    currentPageIndex = 0; // Fallback to first page
+                }
+                updateIndicatorPosition();
+                localStorage.setItem('akhLastPage', currentPageIndex.toString());
+            }
+            // If switching to desktop, we don't need to adjust as all tabs are visible
+        }
     }
 </script>
 

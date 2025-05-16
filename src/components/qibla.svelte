@@ -328,12 +328,12 @@
       
       // Create map with appropriate styling that matches the app's theme
       const mapOptions = {
-        zoom: 3,
+        zoom: 17, // Increased zoom level to see building and surrounding streets (about 500m width)
         center: { lat: 21.4225, lng: 39.8262 }, // Default to Kaaba
         mapTypeId: google.maps.MapTypeId.ROADMAP,
         disableDefaultUI: true,
         zoomControl: true,
-        mapId: import.meta.env.VITE_GOOGLE_MAPS_MAP_ID || "DEMO_MAP_ID", // Используем Map ID из переменных окружения или демо-идентификатор
+        mapId: import.meta.env.VITE_GOOGLE_MAPS_MAP_ID || "DEMO_MAP_ID", // Use Map ID from environment variables or demo ID
         styles: [
           {
             "featureType": "administrative",
@@ -588,7 +588,8 @@
     distanceToKaaba = calculateDistanceToKaaba(lat, lng);
     
     // Обновляем карту с местоположением и линией Киблы
-    updateMapWithLocation();
+    // Pass true to automatically zoom to user location
+    updateMapWithLocation(true);
     
     isLoading = false;
     
@@ -878,15 +879,24 @@
     }
   }
   
-  function updateMapWithLocation() {
+  // Track if this is the first location update for auto-zoom
+  let firstLocationUpdate = true;
+  
+  function updateMapWithLocation(autoZoom = false) {
     if (!userLocation) return;
+    
+    // Always auto-zoom on first location detection
+    if (firstLocationUpdate) {
+      autoZoom = true;
+      firstLocationUpdate = false;
+    }
     
     if (useOpenStreetMap && leafletMap) {
       // OpenStreetMap/Leaflet implementation
-      updateLeafletMap();
+      updateLeafletMap(autoZoom);
     } else if (map) {
       // Google Maps implementation
-      updateGoogleMap();
+      updateGoogleMap(autoZoom);
     }
     
     // Обновляем линию направления если есть значение для heading
@@ -895,11 +905,16 @@
     }
   }
   
-  function updateLeafletMap() {
+  function updateLeafletMap(autoZoom = false) {
     if (!leafletMap || !userLocation) return;
     
-    // Center map on user location
-    leafletMap.setView([userLocation.lat, userLocation.lng], 5);
+    // Center map on user location with appropriate zoom level
+    const zoomLevel = autoZoom ? 
+                     (locationAccuracy > 1000 ? 15 : 
+                      locationAccuracy > 500 ? 16 : 
+                      locationAccuracy > 100 ? 17 : 18) : 17; // Increased zoom levels to show approximately 500m width
+    
+    leafletMap.setView([userLocation.lat, userLocation.lng], zoomLevel);
     
     // Clear existing markers and lines
     leafletMap.eachLayer((layer: any) => {
@@ -963,7 +978,7 @@
     }).addTo(leafletMap);
   }
   
-  function updateGoogleMap() {
+  function updateGoogleMap(autoZoom = false) {
     if (!map || !userLocation) return;
     
     // Убедимся, что API Google Maps полностью загружен с необходимыми библиотеками
@@ -972,9 +987,19 @@
       return;
     }
     
-    // Center map on user location
+    // Center map on user location with appropriate zoom level based on accuracy
     map.setCenter(userLocation);
-    map.setZoom(5);
+    
+    // If autoZoom is true, set zoom level based on location accuracy
+    if (autoZoom) {
+      // Increased zoom levels to show approximately 500m width on screen
+      const zoomLevel = locationAccuracy > 1000 ? 15 : 
+                       locationAccuracy > 500 ? 16 : 
+                       locationAccuracy > 100 ? 17 : 18;
+      map.setZoom(zoomLevel);
+    } else {
+      map.setZoom(17); // Default to high zoom level (about 500m width)
+    }
     
     // Remove previous accuracy circle if exists
     if (accuracyCircle) {
