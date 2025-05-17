@@ -2,6 +2,6 @@
 // It also injects environment variables into the client-side code
 
 exports.handler = async function(event, context) {
-  const svelteKitModule = await import('../.netlify/functions-internal/sveltekit-render.mjs');
+  const svelteKitModule = await import('/var/.netlify/functions-internal/sveltekit-render.mjs');
   return svelteKitModule.handler(event, context);
 };
