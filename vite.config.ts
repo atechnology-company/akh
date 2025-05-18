@@ -80,14 +80,6 @@ export const welcome = () => "Welcome";
 			}),
 			paraglideVirtualModulePlugin
 		],
-		define: {
-			'window.__ENV__': JSON.stringify({
-				GOOGLE_API_KEY: env.GOOGLE_API_KEY,
-				SEARCH_ENGINE_ID: env.SEARCH_ENGINE_ID,
-				GEMINI_API_KEY: env.GEMINI_API_KEY,
-				NODE_ENV: mode
-			})
-		},
 		// Expose environment variables to the client
 		envPrefix: ['VITE_'],
 		build: {

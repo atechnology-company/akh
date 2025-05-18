@@ -5,13 +5,13 @@ import type {
     TopicSection
 } from '../types/index';
 
-// Get environment variables from window.__ENV__ or use empty strings as fallback
+// Get environment variables from Vite or use empty strings as fallback
 const config: Config = {
-    GOOGLE_API_KEY: import.meta.env.VITE_GOOGLE_API_KEY || (window as any).__ENV__?.GOOGLE_API_KEY || '',
-    SEARCH_ENGINE_ID: import.meta.env.VITE_SEARCH_ENGINE_ID || (window as any).__ENV__?.SEARCH_ENGINE_ID || '',
-    GEMINI_API_KEY: import.meta.env.VITE_GEMINI_API_KEY || (window as any).__ENV__?.GEMINI_API_KEY || localStorage.getItem('gemini_api_key') || '',
+    GOOGLE_API_KEY: import.meta.env.VITE_GOOGLE_API_KEY || '',
+    SEARCH_ENGINE_ID: import.meta.env.VITE_SEARCH_ENGINE_ID || '',
+    GEMINI_API_KEY: import.meta.env.VITE_GEMINI_API_KEY || localStorage.getItem('gemini_api_key') || '',
     GEMINI_API_URL: 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent',
-    IS_DEV: import.meta.env.DEV || (window as any).__ENV__?.NODE_ENV === 'development'
+    IS_DEV: import.meta.env.DEV
 };
 
 // Function to update the Gemini API key at runtime

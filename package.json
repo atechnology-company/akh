@@ -12,7 +12,7 @@
 		"webbuild": "turbo run build:web",
 		"build": "turbo run build:web build:android --parallel",
 		"web:build": "turbo run build:web",
-		"build:web": "vite build && echo '/* /.netlify/functions/inject-env 200' > build/_redirects",
+		"build:web": "vite build",
 		"build:android": "npm run copy-web-to-app && ns build android --release",
 		"copy-web-to-app": "node -e \"const fs=require('fs');const path=require('path');if(!fs.existsSync('app/www'))fs.mkdirSync('app/www',{recursive:true});const {copyFileSync,readdirSync,statSync,mkdirSync}=fs;const copyRecursive=(src,dest)=>{const exists=fs.existsSync(src);const stats=exists&&statSync(src);const isDirectory=exists&&stats.isDirectory();if(isDirectory){if(!fs.existsSync(dest))mkdirSync(dest,{recursive:true});readdirSync(src).forEach(child=>{copyRecursive(path.join(src,child),path.join(dest,child));});}else{copyFileSync(src,dest);}};if(fs.existsSync('build'))copyRecursive('build','app/www');\"",
 		"build:ios": "ns build ios",

@@ -4,13 +4,12 @@ import { getFirestore, collection, doc, getDocs, getDoc, addDoc, updateDoc, quer
 import type { Mosque } from './mosqueData';
 
 // Firebase configuration
-// For development purposes, using a placeholder config
-// In production, this should be replaced with actual Firebase config
+// Using environment variables for sensitive information
 const firebaseConfig = {
-  apiKey: import.meta.env.FIREBASE_API_KEY || (window as any).__ENV__?.FIREBASE_API_KEY || '',
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || '',
   authDomain: "akh-mosques.firebaseapp.com",
   projectId: "akh-mosques",
-  storageBucket: "akh-mosques.firebasestorage.app",
+  storageBucket: "akh-mosques.appspot.com",
   messagingSenderId: "22059571998",
   appId: "1:22059571998:web:13e83b2ba4a8eb0b63870f",
   measurementId: "G-N82N2LKR11"
@@ -18,22 +17,31 @@ const firebaseConfig = {
 
 // Initialize Firebase
 let app;
-let db: boolean | any;
+let db: any;
 
 // Initialize Firebase only in browser environment
 if (typeof window !== 'undefined') {
   try {
+    // Check if API key is available
+    if (!firebaseConfig.apiKey) {
+      console.warn('Firebase API key is missing. Firebase functionality will be limited.');
+    }
+    
     app = initializeApp(firebaseConfig);
     db = getFirestore(app);
     console.log('Firebase initialized successfully');
   } catch (error) {
     console.error('Error initializing Firebase:', error);
+    db = null;
   }
 }
 
 // Collection references
 const getMosquesCollection = (): CollectionReference => {
-  if (!db) throw new Error('Firestore not initialized');
+  if (!db) {
+    console.error('Firestore not initialized. Please check your environment variables and Firebase configuration.');
+    throw new Error('Firestore not initialized');
+  }
   return collection(db, 'mosques');
 };
 

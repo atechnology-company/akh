@@ -1,14 +1,9 @@
 [build]
   command = "npm run web:build"
   publish = "build"
-  functions = "functions"
   
 [build.environment]
   NODE_VERSION = "20"
-
-[functions]
-  directory = "functions"
-  node_bundler = "esbuild"
 
 [[headers]]
   for = "/manifest.webmanifest"
