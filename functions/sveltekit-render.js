@@ -1,8 +1,6 @@
-// This file is used by Netlify to render the SvelteKit app
-// It also injects environment variables into the client-side code
+// .netlify/functions-internal/handler.js or .mjs depending on your setup
 
-exports.handler = async function(event, context) {
-  // Use a relative path instead of absolute path
-  const svelteKitModule = await import('./sveltekit-render.mjs');
-  return svelteKitModule.handler(event, context);
-};
+// Import the handler using ESM syntax
+import { handler } from '../.netlify/functions-internal/sveltekit-render.js';
+
+export { handler as default };
