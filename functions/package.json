@@ -1,9 +1,0 @@
-{
-  "name": "akh-netlify-functions",
-  "version": "1.0.0",
-  "description": "Netlify functions for AKH project",
-  "type": "module",
-  "dependencies": {
-    "@sveltejs/kit": "^2.16.0"
-  }
-}

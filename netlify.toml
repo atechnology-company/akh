@@ -1,7 +1,6 @@
 [build]
   command = "npm run web:build"
   publish = "build"
-  functions = "functions"
 
 [[headers]]
   for = "/*.(css|js)"
