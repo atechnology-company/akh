@@ -19,9 +19,8 @@ console.log(`${colors.cyan}Starting Netlify build process...${colors.reset}`);
 
 // Build the SvelteKit app
 try {
-  console.log(`${colors.yellow}Running vite build...${colors.reset}`);
-  // Use npx to ensure vite is found
-  execSync('npx vite build', { stdio: 'inherit' });
+  console.log(`${colors.yellow}Running SvelteKit build...${colors.reset}`);
+  execSync('npx vite build --mode production', { stdio: 'inherit' });
 } catch (error) {
   console.error(`${colors.red}Build failed:${colors.reset}`, error);
   process.exit(1);

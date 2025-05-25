@@ -13,8 +13,8 @@ const config = {
 			edge: false,
 			split: false,
 			
-			// Set fallback to SPA mode
-			fallback: 'index.html',
+			// Handle SPA routing
+			fallback: null,
 			
 			// Set the output directory to 'build' to match netlify.toml
 			out: 'build',

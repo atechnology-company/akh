@@ -32,7 +32,7 @@
 		"test:unit": "vitest run",
 		"test:e2e": "playwright test",
 		"mobile:dev": "concurrently \"npm run dev:web\" \"npm run dev:android\"",
-		"netlify": "npm run prepare && npm run build:web",
+		"netlify": "npm run prepare && npm run web:build",
 		"netlify:build": "node netlify-build.mjs"
 	},
 	"devDependencies": {
