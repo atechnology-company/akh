@@ -17,8 +17,9 @@ const colors = {
 
 console.log(`${colors.cyan}Starting Netlify build process...${colors.reset}`);
 
-// Build the SvelteKit app
 try {
+  console.log(`${colors.yellow}Running SvelteKit build...${colors.reset}`);
+  execSync('npx @sveltejs/kit sync && npm run build', { stdio: 'inherit' });
   console.log(`${colors.yellow}Running SvelteKit build...${colors.reset}`);
   execSync('npx vite build --mode production', { stdio: 'inherit' });
 } catch (error) {

@@ -9,27 +9,9 @@ const config = {
 
 	kit: {
 		adapter: adapter({
-			// Use static adapter mode for Netlify
-			edge: false,
-			split: false,
-			
-			// Handle SPA routing
-			fallback: null,
-			
-			// Set the output directory to 'build' to match netlify.toml
-			out: 'build',
-			
-			// Enable typescript path aliases in output
-			esbuild: {
-				keepNames: true,
-				tsconfigRaw: {
-					compilerOptions: {
-						preserveValueImports: true
-					}
-				}
-			}
+			fallback: 'index.html'
 		}),
-		// Ensure correct path resolution in Netlify environment
+		
 		paths: {
 			base: ''
 		}
