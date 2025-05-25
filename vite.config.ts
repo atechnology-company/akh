@@ -1,34 +1,34 @@
 import { paraglide } from '@inlang/paraglide-sveltekit/vite';
 import tailwindcss from '@tailwindcss/vite';
 import { sveltekit } from '@sveltejs/kit/vite';
-import { defineConfig, loadEnv } from 'vite';
-import type { Plugin } from 'vite';
-import path from 'path';
-import fs from 'fs';
+import { defineConfig } from 'vite';
+import type { Plugin, UserConfig } from 'vite';
 
-export default defineConfig(({ mode }) => {
-	// Load env file based on `mode` in the current working directory.
-	// Set the third parameter to '' to load all env regardless of the `VITE_` prefix.
-	const env = loadEnv(mode, process.cwd(), '');
-	
+export default defineConfig((): UserConfig => {
 	// Custom plugin to handle paraglide virtual modules
 	const paraglideVirtualModulePlugin: Plugin = {
 		name: 'paraglide-virtual-module-plugin',
 		resolveId(id) {
-			if (id === '$paraglide-internal-virtual-module:runtime' || 
-				id === '$paraglide-internal-virtual-module:runtime.js') {
+			if (
+				id === '$paraglide-internal-virtual-module:runtime' ||
+				id === '$paraglide-internal-virtual-module:runtime.js'
+			) {
 				return id;
 			}
-			if (id === '$paraglide-internal-virtual-module:messages' ||
-				id === '$paraglide-internal-virtual-module:messages.js') {
+			if (
+				id === '$paraglide-internal-virtual-module:messages' ||
+				id === '$paraglide-internal-virtual-module:messages.js'
+			) {
 				return id;
 			}
 			return null;
 		},
 		load(id) {
 			try {
-				if (id === '$paraglide-internal-virtual-module:runtime' || 
-					id === '$paraglide-internal-virtual-module:runtime.js') {
+				if (
+					id === '$paraglide-internal-virtual-module:runtime' ||
+					id === '$paraglide-internal-virtual-module:runtime.js'
+				) {
 					// Provide runtime module implementation directly
 					return `
 // Mock Paraglide runtime module
@@ -38,7 +38,7 @@ export const availableLanguageTags = ['en', 'ru', 'id', 'zh'];
 let _currentLanguageTag = 'en';
 
 export function languageTag() { return _currentLanguageTag; }
-export function setLanguageTag(tag) { 
+export function setLanguageTag(tag) {
 	if (availableLanguageTags.includes(tag)) {
 		_currentLanguageTag = tag;
 	}
@@ -54,8 +54,10 @@ export const isRtl = rtlLanguages.includes(_currentLanguageTag);
 export const textDirection = isRtl ? 'rtl' : 'ltr';
 `;
 				}
-				if (id === '$paraglide-internal-virtual-module:messages' ||
-					id === '$paraglide-internal-virtual-module:messages.js') {
+				if (
+					id === '$paraglide-internal-virtual-module:messages' ||
+					id === '$paraglide-internal-virtual-module:messages.js'
+				) {
 					// Provide empty messages module with basic functionality
 					return `
 // Mock Paraglide messages module
@@ -69,7 +71,7 @@ export const welcome = () => "Welcome";
 			return null;
 		}
 	};
-	
+
 	return {
 		plugins: [
 			tailwindcss(),
@@ -83,11 +85,11 @@ export const welcome = () => "Welcome";
 		// Expose environment variables to the client
 		envPrefix: ['VITE_'],
 		build: {
-			minify: 'terser',
+			minify: 'terser' as const,
 			terserOptions: {
 				compress: {
-					drop_console: true,
-				},
+					drop_console: true
+				}
 			},
 			rollupOptions: {
 				output: {
@@ -97,5 +99,5 @@ export const welcome = () => "Welcome";
 				}
 			}
 		}
-	};
+	} as const;
 });
