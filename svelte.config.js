@@ -17,8 +17,22 @@ const config = {
 			fallback: 'index.html',
 			
 			// Set the output directory to 'build' to match netlify.toml
-			out: 'build'
-		})
+			out: 'build',
+			
+			// Enable typescript path aliases in output
+			esbuild: {
+				keepNames: true,
+				tsconfigRaw: {
+					compilerOptions: {
+						preserveValueImports: true
+					}
+				}
+			}
+		}),
+		// Ensure correct path resolution in Netlify environment
+		paths: {
+			base: ''
+		}
 	}
 };
 

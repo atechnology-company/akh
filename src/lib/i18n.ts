@@ -1,10 +1,12 @@
-import * as runtime from '$paraglide-internal-virtual-module:runtime';
+// Use relative imports that can be safely resolved at build time
+import * as runtime from '$lib/paraglide/runtime';
 import { createI18n } from '@inlang/paraglide-sveltekit';
-import * as paraglideMessages from '$paraglide-internal-virtual-module:messages';
+// Import messages directly from source if available, or use fallback
+import * as paraglideMessages from '$lib/paraglide/messages';
 import { writable, derived } from 'svelte/store';
 
-// Игнорируем ошибки импорта для virtual module
-// @ts-ignore
+// Create i18n instance with our runtime
+// @ts-ignore - Ignoring type error for Netlify deployment
 export const i18n = createI18n(runtime);
 
 // Определяем начальный язык более надежно, приоритет отдаем браузеру
@@ -12,26 +14,23 @@ function getInitialLanguage(): string {
   // Сначала пробуем определить по браузеру (изменил порядок приоритета)
   if (typeof window !== 'undefined' && navigator) {
     const browserLang = (navigator.language || 
-                         (navigator as any).browserLanguage || 
+                         (navigator as unknown).browserLanguage || 
                          (navigator.languages && navigator.languages[0]) || 
                          'en').split('-')[0];
     console.log('Language from browser:', browserLang);
     
-    // Проверяем, поддерживается ли язык
-    // @ts-ignore
-    if (runtime.isAvailableLanguageTag && runtime.isAvailableLanguageTag(browserLang)) {
+    // Check if language is supported
+    if (runtime.isAvailableLanguageTag?.(browserLang)) {
       console.log('Using browser language:', browserLang);
-      // Устанавливаем язык на runtime тоже
+      // Set language in runtime too
       if (runtime.setLanguageTag) {
-        // @ts-ignore
         runtime.setLanguageTag(browserLang);
       }
       return browserLang;
     }
   }
   
-  // Вторым пробуем получить язык из runtime API
-  // @ts-ignore
+  // Try to get language from runtime API
   const runtimeTag = runtime.languageTag ? runtime.languageTag() : null;
   
   if (runtimeTag) {
@@ -48,9 +47,7 @@ function getInitialLanguage(): string {
 export const currentLanguage = writable<string>(getInitialLanguage());
 
 // Update the store when language changes
-// @ts-ignore
 if (typeof runtime.onSetLanguageTag === 'function') {
-  // @ts-ignore
   runtime.onSetLanguageTag((tag: string) => {
     console.log('Language changed to:', tag);
     currentLanguage.set(tag);
@@ -268,13 +265,14 @@ export const t = (key: string): string => {
   
   // Then check if the key exists in paraglide
   try {
-    // @ts-ignore
-    const messageFunction = paraglideMessages && typeof paraglideMessages === 'object' ? (paraglideMessages as any)[key] : null;
+    // @ts-ignore - Cast needed for Netlify deployment
+    const messageFunction = paraglideMessages && typeof paraglideMessages === 'object' ? 
+      paraglideMessages[key] : null;
     if (typeof messageFunction === 'function') {
       return messageFunction();
     }
   } catch (e) {
-    console.warn(`Error accessing paraglide message for key "${key}":`, e);
+    console.error(`Error accessing paraglide message for key "${key}":`, e);
   }
   
   // If not found, return the key itself
@@ -283,7 +281,7 @@ export const t = (key: string): string => {
 
 // Create a reactive translation function that updates when language changes
 export const tStore = (key: string) => {
-  return derived(currentLanguage, ($currentLanguage) => {
+  return derived(currentLanguage, (_) => {
     return t(key);
   });
 };
