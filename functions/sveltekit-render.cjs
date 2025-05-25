@@ -5,7 +5,7 @@
 exports.handler = async function(event, context) {
   try {
     // The path to the handler might change depending on your build
-    const { handler } = require('../build/handler.js');
+    const { handler } = require('../.netlify/functions-internal/render.js');
     return await handler(event, context);
   } catch (error) {
     console.error('Error in sveltekit-render.js:', error);
