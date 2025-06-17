@@ -21,7 +21,6 @@ using gemini 2.5 flash along with access to a wide base of pre-existing verified
 this software is released under the Mozilla Public License Version 2.0, but it honestly isn't really that deep just yet so just do whatever you want, it isn't like i'm bothered enough to sue anyone or take legal action.
 
 ### todo
-- qibla compass?
 - allow users to use multiple providers (gpt, gemini, claude etc)
 - gradual minimal drawn animation changing throughout the day and based on weather
 - make hadith reader
@@ -43,6 +42,7 @@ this software is released under the Mozilla Public License Version 2.0, but it h
 - bumped engine to gemini 2.5 flash
 - shake to switch page on mobile
 - updated page switcher
+- added umami analytics, i just want to see traffic
 - and more optimisations and bug fixes
 
 ### 0.3.1
