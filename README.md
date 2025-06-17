@@ -23,7 +23,7 @@ this software is released under the Mozilla Public License Version 2.0, but it h
 ### todo
 - qibla compass?
 - allow users to use multiple providers (gpt, gemini, claude etc)
-- gradual animation changing throughout the day and based on weather
+- gradual minimal drawn animation changing throughout the day and based on weather
 - make hadith reader
 - fix nativescript to build applications
 - mobile app version
@@ -31,6 +31,10 @@ this software is released under the Mozilla Public License Version 2.0, but it h
 - make mosques page better (auth, events update like a tg channel, once app is done set defaults etc)
 - need to think about verse by verse implementation, how to not reload but go up a verse through scrolling
 - full codebase migration to tailwindcss
+- fix compass in 0.3.2
+- make audio play more than one verse (autoscroll)
+- fix settings view on mobile as it is cut off
+- make a new welcome phase and tutorial
 
 ### 0.3 update
 - qibla page fixed with design changes for minimalism and qol, moved from google maps api to openstreetmap
