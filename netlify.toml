@@ -2,12 +2,18 @@
   command = "npm run web:build"
   publish = "build"
 
+[build.environment]
+  NODE_VERSION = "18"
+
+[functions]
+  node_bundler = "esbuild"
+
 [[headers]]
-  for = "/*.(css|js)"
+  for = "/_app/immutable/*"
   [headers.values]
     Cache-Control = "public, max-age=31536000, immutable"
 
 [[headers]]
-  for = "/*.html"
+  for = "/favicon.png"
   [headers.values]
-    Cache-Control = "public, max-age=0, must-revalidate"
+    Cache-Control = "public, max-age=86400"

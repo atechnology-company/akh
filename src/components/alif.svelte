@@ -37,7 +37,8 @@
 
   // API key management
   let showApiKeyModal = false;
-  let savedApiKey = '';
+  let savedGeminiApiKey = '';
+  let savedGoogleApiKey = '';
   
   // Settings navigation - open local settings modal instead of navigating away
   function navigateToSettings() {
@@ -57,24 +58,34 @@
   
   // Function to open API key modal
   function openApiKeyModal() {
-    // Try to get saved API key from localStorage
-    const storedApiKey = localStorage.getItem('gemini_api_key') || '';
-    savedApiKey = storedApiKey;
+    // Try to get saved API keys from localStorage
+    const storedGeminiApiKey = localStorage.getItem('gemini_api_key') || '';
+    const storedGoogleApiKey = localStorage.getItem('google_api_key') || '';
+    savedGeminiApiKey = storedGeminiApiKey;
+    savedGoogleApiKey = storedGoogleApiKey;
     showApiKeyModal = true;
   }
   
   // Function to handle API key save from modal
-  function handleApiKeySave(event: CustomEvent<string>) {
-    const apiKey = event.detail;
-    if (apiKey) {
-      localStorage.setItem('gemini_api_key', apiKey);
-      savedApiKey = apiKey;
+  function handleApiKeySave(event: CustomEvent<{gemini: string, google: string}>) {
+    const apiKeys = event.detail;
+    
+    if (apiKeys.gemini) {
+      localStorage.setItem('gemini_api_key', apiKeys.gemini);
+      savedGeminiApiKey = apiKeys.gemini;
       
       // Update the config in plates-engine
       if (typeof window !== 'undefined') {
-        PlatesEngine.updateApiKey(savedApiKey);
+        PlatesEngine.updateApiKey(savedGeminiApiKey);
       }
     }
+    
+    if (apiKeys.google) {
+      localStorage.setItem('google_api_key', apiKeys.google);
+      savedGoogleApiKey = apiKeys.google;
+      // TODO: Update Google API usage when implemented
+    }
+    
     showApiKeyModal = false;
   }
   
@@ -86,7 +97,6 @@
   // Subscribe to language changes
   const unsubscribe = currentLanguage.subscribe(lang => {
     translatedGreeting = t('greeting');
-    
     if (greeting) greeting.innerText = translatedGreeting;
     if (typingTip) typingTip.innerText = t('press_enter');
     if (promptInput) promptInput.placeholder = t('what_to_learn');
@@ -99,7 +109,7 @@
     componentData.promptInput = promptInput;
     componentData.greeting = greeting;
     componentData.typingTip = typingTip;
-    
+
     // Initialize UI and apply autosize
     AlifUI.initializeUI(componentData);
     
@@ -631,11 +641,17 @@
       disabled={isLoading}
     ></textarea>
   </div>
-  <div id="typing-tip" class="hidden" bind:this={typingTip}>
-    {t('press_enter')}
+  {#if isLoading}
+    <div class="loading-overlay">
+      <div class="loading-text">{resultText}</div>
+      <div class="loading-spinner"></div>
+    </div>
+  {/if}
+  <div id="typing-tip" class="typing-indicator" bind:this={typingTip}>
+    ALIF is a BETA product, it also uses LLMS and may not always be correct with it's information. It's also not up to date, and will be updated soon. barakAllah feek.
   </div>
   <button class="settings-button" on:click={navigateToSettings} aria-label="Settings">
-    <span class="settings-icon">⚙️</span>
+    <span class="material-symbols-rounded">settings</span>
   </button>
 </div>
 
@@ -768,7 +784,8 @@
 {#if showApiKeyModal}
   <ApiKeyModal 
     showModal={showApiKeyModal}
-    apiKey={savedApiKey} 
+    geminiApiKey={savedGeminiApiKey}
+    googleApiKey={savedGoogleApiKey}
     on:save={handleApiKeySave} 
     on:close={handleApiKeyModalClose} 
   />
@@ -788,6 +805,27 @@
     word-wrap: normal;
     direction: ltr;
     -webkit-font-smoothing: antialiased;
+  }
+  
+  .typing-indicator {
+    position: absolute;
+    bottom: 3vh;
+    left: 20px;
+    font-size: 14px;
+    color: #999;
+    padding: 8px 12px;
+    animation: fadeInUp 0.3s ease-out;
+  }
+  
+  @keyframes fadeInUp {
+    from {
+      opacity: 0;
+      transform: translateY(10px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
   }
 
   #input-page, #result-page {

@@ -1,7 +1,7 @@
 {
 	"name": "akh",
 	"private": true,
-	"version": "0.2.0-alpha",
+	"version": "0.3.0-alpha",
 	"type": "module",
 	"scripts": {
 		"dev": "turbo run dev:web dev:android dev:ios --parallel",
@@ -43,7 +43,6 @@
 		"@storybook/test": "^8.6.7",
 		"@sveltejs/adapter-auto": "^4.0.0",
 		"@sveltejs/adapter-netlify": "^5.0.0",
-		"@sveltejs/adapter-static": "^3.0.8",
 		"@sveltejs/kit": "^2.16.0",
 		"@sveltejs/vite-plugin-svelte": "^5.0.0",
 		"@tailwindcss/typography": "^0.5.15",

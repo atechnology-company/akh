@@ -74,11 +74,17 @@
         <h3>Calculation Method</h3>
         <div class="setting-row">
             <label for="useAutoDetect">Auto-detect based on location</label>
-            <input 
-                type="checkbox" 
-                id="useAutoDetect" 
-                bind:checked={settings.useAutoDetect}
-            />
+            <div class="slider-container">
+                <input 
+                    type="checkbox" 
+                    id="useAutoDetect" 
+                    bind:checked={settings.useAutoDetect}
+                    class="slider-input"
+                />
+                <label for="useAutoDetect" class="slider">
+                    <span class="slider-thumb"></span>
+                </label>
+            </div>
         </div>
         
         {#if !settings.useAutoDetect}
@@ -176,134 +182,215 @@
     .prayer-settings {
         color: white;
         font-family: "Onest", sans-serif;
+        padding: 20px;
     }
     
     .settings-group {
-        margin-bottom: 20px;
-        background-color: rgba(255, 255, 255, 0.05);
-        border-radius: 8px;
-        padding: 15px;
+        margin-bottom: 24px;
+        background: rgba(255, 255, 255, 0.08);
+        backdrop-filter: blur(10px);
+        border-radius: 16px;
+        padding: 20px;
+        border: 1px solid rgba(255, 255, 255, 0.2);
+        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
     }
     
     .settings-group h3 {
         margin-top: 0;
-        margin-bottom: 15px;
-        font-weight: 500;
-        font-size: 1.2rem;
+        margin-bottom: 20px;
+        font-weight: 600;
+        font-size: 1.3rem;
         color: var(--accent-color);
-        padding-bottom: 8px;
+        padding-bottom: 10px;
+        border-bottom: 2px solid rgba(var(--accent-color-rgb, 0, 114, 255), 0.3);
     }
     
     .setting-row {
         display: flex;
         justify-content: space-between;
         align-items: center;
-        margin-bottom: 12px;
+        margin-bottom: 16px;
+        padding: 8px 0;
     }
     
     .setting-row label {
         font-size: 1rem;
-        color: rgba(255, 255, 255, 0.8);
+        color: rgba(255, 255, 255, 0.9);
+        font-weight: 500;
     }
     
     .setting-row input[type="number"] {
-        width: 70px;
-        background-color: rgba(255, 255, 255, 0.1);
-        border-radius: 4px;
+        width: 80px;
+        background: rgba(255, 255, 255, 0.08);
+        backdrop-filter: blur(10px);
+        border: 2px solid rgba(255, 255, 255, 0.2);
+        border-radius: 8px;
         color: white;
-        padding: 8px;
-        font-size: 0.9rem;
+        padding: 10px 12px;
+        font-size: 0.95rem;
+        transition: all 0.3s ease;
+        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
     }
     
-    .setting-row input[type="checkbox"] {
-        width: 20px;
-        height: 20px;
-        accent-color: var(--accent-color);
-        appearance: none;
-        -webkit-appearance: none;
-        background-color: rgba(255, 255, 255, 0.1);
-        border: 1px solid rgba(255, 255, 255, 0.3);
-        border-radius: 4px;
-        position: relative;
-        cursor: pointer;
-        transition: all 0.2s ease;
-    }
-    
-    .setting-row input[type="checkbox"]:checked {
-        background-color: var(--accent-color);
+    .setting-row input[type="number"]:focus {
+        outline: none;
         border-color: var(--accent-color);
-        box-shadow: 0 0 2px var(--accent-color);
+        box-shadow: 0 0 0 3px rgba(var(--accent-color-rgb, 0, 114, 255), 0.3);
+        background: rgba(255, 255, 255, 0.12);
+        transform: translateY(-1px);
     }
     
-    .setting-row input[type="checkbox"]:checked::after {
-        content: "✓";
+    .setting-row input[type="number"]:hover:not(:focus) {
+        border-color: rgba(var(--accent-color-rgb, 0, 114, 255), 0.5);
+        background: rgba(255, 255, 255, 0.10);
+        transform: translateY(-0.5px);
+    }
+    
+    .slider-container {
+        position: relative;
+        display: inline-block;
+    }
+    
+    .slider-input {
+        opacity: 0;
+        width: 0;
+        height: 0;
         position: absolute;
-        top: 50%;
-        left: 50%;
-        transform: translate(-50%, -50%);
-        color: white;
-        font-size: 0.9rem;
+    }
+    
+    .slider {
+        position: relative;
+        display: inline-block;
+        width: 52px;
+        height: 28px;
+        background: rgba(255, 255, 255, 0.08);
+        border: 2px solid rgba(255, 255, 255, 0.2);
+        border-radius: 28px;
+        cursor: pointer;
+        transition: all 0.3s ease;
+        backdrop-filter: blur(10px);
+        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
+    }
+    
+    .slider-thumb {
+        position: absolute;
+        content: "";
+        height: 20px;
+        width: 20px;
+        left: 2px;
+        top: 2px;
+        background: white;
+        transition: all 0.3s ease;
+        border-radius: 50%;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+    }
+    
+    .slider-input:checked + .slider {
+        background: var(--gradient-color, linear-gradient(135deg, var(--accent-color), var(--accent-color)));
+        border-color: var(--accent-color);
+        box-shadow: 0 0 0 3px rgba(var(--accent-color-rgb, 0, 114, 255), 0.3);
+    }
+    
+    .slider-input:checked + .slider .slider-thumb {
+        transform: translateX(24px);
+    }
+    
+    .slider:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 6px 20px rgba(0, 0, 0, 0.15);
     }
     
     .setting-row select {
-        background-color: rgba(255, 255, 255, 0.1);
-        border-radius: 4px;
+        background: rgba(255, 255, 255, 0.08);
+        backdrop-filter: blur(10px);
+        border: 2px solid rgba(255, 255, 255, 0.2);
+        border-radius: 8px;
         color: white;
-        padding: 8px;
-        width: 200px;
-        font-size: 0.9rem;
+        padding: 10px 12px;
+        width: 220px;
+        font-size: 0.95rem;
+        transition: all 0.3s ease;
+        cursor: pointer;
+        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
+    }
+    
+    .setting-row select:focus {
+        outline: none;
+        border-color: var(--accent-color);
+        box-shadow: 0 0 0 3px rgba(var(--accent-color-rgb, 0, 114, 255), 0.3);
+        background: rgba(255, 255, 255, 0.12);
+        transform: translateY(-1px);
+    }
+    
+    .setting-row select:hover:not(:focus) {
+        border-color: rgba(var(--accent-color-rgb, 0, 114, 255), 0.5);
+        background: rgba(255, 255, 255, 0.10);
+        transform: translateY(-0.5px);
     }
     
     .setting-row select option {
-        background-color: #2d2d2d;
+        background: #2d2d2d;
         color: white;
+        padding: 8px;
     }
     
     .button-group {
         display: flex;
         justify-content: space-between;
-        margin-top: 20px;
+        margin-top: 30px;
+        gap: 16px;
     }
     
     .save-button, .reset-button {
-        padding: 10px 20px;
-        border-radius: 4px;
+        padding: 12px 24px;
+        border-radius: 12px;
         font-size: 1rem;
+        font-weight: 600;
         cursor: pointer;
         position: relative;
         background-size: 200% 100%;
         transition: all 0.3s ease;
+        border: none;
+        backdrop-filter: blur(10px);
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
     }
     
     .save-button {
-        border: none;
         color: white;
+        background: var(--gradient-color, linear-gradient(135deg, var(--accent-color), var(--accent-color)));
         background-size: 200% 100%;
         background-position: 0% center;
-        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
-        background-image: var(--gradient-color, linear-gradient(135deg, var(--gradient-color-1, #8ae068), var(--gradient-color-2, #0072ff)));
     }
     
     .reset-button {
-        background-color: transparent;
+        background: rgba(255, 255, 255, 0.08);
         color: var(--accent-color);
-        border: 1px solid var(--accent-color);
-        background-image: linear-gradient(135deg, 
-            var(--accent-color) 0%,
-            var(--accent-color) 100%
-        );
-        background-clip: text;
-        -webkit-background-clip: text;
+        border: 2px solid var(--accent-color);
     }
     
     .save-button:hover, .reset-button:hover {
         text-decoration: none;
+        transform: translateY(-2px);
+        box-shadow: 0 12px 32px rgba(0, 0, 0, 0.3);
     }
     
     .save-button:hover {
-        transform: translateY(-2px);
-        animation: saveButtonPulse 1.2s ease-in-out 0.15s;
-        animation-fill-mode: forwards;
+        animation: saveButtonPulse 1.2s ease-in-out;
+    }
+    
+    .reset-button:hover {
+        color: white;
+        background: var(--gradient-color, linear-gradient(135deg, var(--accent-color), var(--accent-color)));
+        animation: resetButtonSlide 0.3s ease-in-out;
+    }
+    
+    @keyframes resetButtonSlide {
+        0% {
+            background-position: -100% center;
+        }
+        100% {
+            background-position: 0% center;
+        }
     }
     
     @keyframes saveButtonPulse {
@@ -318,42 +405,13 @@
         }
     }
     
-    .reset-button:hover {
-        color: transparent;
-        border-color: transparent;
-        background-image: linear-gradient(135deg, 
-            var(--accent-color) 0%,
-            var(--gradient-color-1, var(--accent-color)) 20%, 
-            var(--gradient-color-2, var(--accent-color)) 40%,
-            var(--accent-color) 60%,
-            var(--gradient-color-1, var(--accent-color)) 80%,
-            var(--accent-color) 100%
-        );
-        animation: buttonGradientPulse 1.2s ease-in-out 0.15s;
-        animation-fill-mode: forwards;
-    }
-    
     .save-button:disabled, .reset-button:disabled {
         opacity: 0.6;
         cursor: not-allowed;
         transform: none;
         filter: grayscale(0.5);
         animation: none;
-    }
-    
-    @keyframes buttonGradientPulse {
-        0% {
-            background-position: 0% center;
-            color: transparent;
-        }
-        50% {
-            background-position: 100% center;
-            color: transparent;
-        }
-        100% {
-            background-position: 0% center;
-            color: var(--accent-color);
-        }
+        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
     }
     
     :global(:root) {

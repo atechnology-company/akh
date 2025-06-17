@@ -1,7 +1,3 @@
-/**
- * Module for managing Salah (prayer) times and related functionality.
- */
-
 import { browser } from '$app/environment';
 import { writable, get } from 'svelte/store';
 import { calculatePrayerTimes, getHijriDateSync, determineCalculationMethod, CALCULATION_METHODS, ASR_METHODS } from './prayerCalculation';
@@ -246,43 +242,54 @@ export function updateColorsBasedOnPrayerTimes(prayerTimes: PrayerTimes) {
     return hours * 60 + minutes;
   };
   
-  // Define prayer order
-  const prayers = ['fajr', 'sunrise', 'dhuhr', 'asr', 'maghrib', 'isha'];
+  // Define prayer times in order
+  const prayerData = [
+    { name: 'fajr', time: timeToMinutes(prayerTimes.fajr) },
+    { name: 'sunrise', time: timeToMinutes(prayerTimes.sunrise) },
+    { name: 'dhuhr', time: timeToMinutes(prayerTimes.dhuhr) },
+    { name: 'asr', time: timeToMinutes(prayerTimes.asr) },
+    { name: 'maghrib', time: timeToMinutes(prayerTimes.maghrib) },
+    { name: 'isha', time: timeToMinutes(prayerTimes.isha) }
+  ];
   
   // Log all prayer times for debugging
-  console.log('Prayer times available:', Object.entries(prayerTimes)
-    .map(([prayer, time]) => `${prayer}: ${time} (${timeToMinutes(time)} minutes)`)
+  console.log('Prayer times available:', prayerData
+    .map(p => `${p.name}: ${p.time} minutes`)
     .join(', '));
   
-  // Store current prayer
-  let currentPrayer = 'fajr'; // Default
-  
   // Find current prayer
-  for (let i = 0; i < prayers.length; i++) {
-    const prayer = prayers[i];
-    const prayerTimeStr = prayerTimes[prayer as keyof typeof prayerTimes];
-    if (!prayerTimeStr) continue;
-    const prayerTime = timeToMinutes(prayerTimeStr);
+  let currentPrayer = 'isha'; // Default to isha (night prayer)
+  
+  // Check each prayer time to find which period we're in
+  for (let i = 0; i < prayerData.length; i++) {
+    const current = prayerData[i];
+    const next = prayerData[i + 1];
     
-    if (currentTime < prayerTime) {
-      // If we're before this prayer, the previous one is current
-      currentPrayer = i === 0 ? prayers[prayers.length - 1] : prayers[i - 1];
-      console.log(`Current prayer is ${currentPrayer} because current time (${currentTime}) is before ${prayer} (${prayerTime})`);
-      break;
+    if (next) {
+      // Between two prayers in the same day
+      if (currentTime >= current.time && currentTime < next.time) {
+        currentPrayer = current.name;
+        console.log(`Current prayer: ${currentPrayer} (between ${current.time} and ${next.time})`);
+        break;
+      }
+    } else {
+      // After isha until next fajr (handle day wrap)
+      if (currentTime >= current.time || currentTime < prayerData[0].time) {
+        currentPrayer = current.name;
+        console.log(`Current prayer: ${currentPrayer} (after isha or before fajr)`);
+        break;
+      }
     }
   }
   
   // Prayer color mapping
   const prayerColors = {
-    fajr: '#fdbb2d', // Using last color from gradient
+    fajr: '#fdbb2d',
     sunrise: '#ffb01f',
     dhuhr: '#0072ff',
     asr: '#ef473a',
     maghrib: '#b42460',
-    isha: '#2c5364',
-    tahajjud: '#7a0270',
-    witr: '#182848',
-    duha: '#ffb01f'
+    isha: '#2c5364'
   };
 
   const prayerGradients = {
@@ -291,25 +298,40 @@ export function updateColorsBasedOnPrayerTimes(prayerTimes: PrayerTimes) {
     dhuhr: 'linear-gradient(135deg, #8ae068, #0072ff)',
     asr: 'linear-gradient(135deg, #dda65e, #ef473a)',
     maghrib: 'linear-gradient(135deg, #ef473a, #b42460)',
-    isha: 'linear-gradient(135deg, #0f2027, #203a43, #2c5364)',
-    tahajjud: 'linear-gradient(135deg, #0b122b, #3f0c41, #7a0270)',
-    witr: 'linear-gradient(135deg, #2C3E50, #4B6CB7, #182848)',
-    duha: 'linear-gradient(135deg, #FF9500, #ff2d00, #ffb01f)'
+    isha: 'linear-gradient(135deg, #0f2027, #203a43, #2c5364)'
   };
   
   // Get color for current prayer (with fallback)
-  const color = prayerColors[currentPrayer as keyof typeof prayerColors] || prayerColors.fajr;
-  const gradient = prayerGradients[currentPrayer as keyof typeof prayerGradients] || prayerGradients.fajr;
+  const color = prayerColors[currentPrayer as keyof typeof prayerColors] || prayerColors.isha;
+  const gradient = prayerGradients[currentPrayer as keyof typeof prayerGradients] || prayerGradients.isha;
   
   // Update DOM directly for immediate effect
-  document.documentElement.style.setProperty('--accent-color', color);
-  document.documentElement.style.setProperty('--gradient-color', gradient);
+  if (document?.documentElement) {
+    document.documentElement.style.setProperty('--accent-color', color);
+    document.documentElement.style.setProperty('--gradient-color', gradient);
+    
+    // Also update RGB values for better compatibility
+    const rgbValues = hexToRgb(color);
+    if (rgbValues) {
+      document.documentElement.style.setProperty('--accent-color-rgb', `${rgbValues.r}, ${rgbValues.g}, ${rgbValues.b}`);
+    }
+  }
   
   // Update stores
   accentColor.set(color);
   gradientColor.set(gradient);
   
   console.log(`Updated accent color to ${color} and gradient to ${gradient} for prayer: ${currentPrayer}`);
+}
+
+// Helper function to convert hex to RGB
+function hexToRgb(hex: string): {r: number, g: number, b: number} | null {
+  const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+  return result ? {
+    r: parseInt(result[1], 16),
+    g: parseInt(result[2], 16),
+    b: parseInt(result[3], 16)
+  } : null;
 }
 
 // Calculate prayer times with settings

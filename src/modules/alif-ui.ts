@@ -45,15 +45,17 @@ export function handlePromptInput(
   if (componentData.greeting && target.value.length > 0) {
     if (componentData.greeting) $(componentData.greeting).addClass('hidden');
     $(target).addClass('modified');
-    if (componentData.typingTip) $(componentData.typingTip).removeClass('hidden');
-    
+    if (componentData.typingTip) {
+      $(componentData.typingTip).html(t('press_enter'));
+    }
     // Update autosize when input changes
     autosizeWithUpdate.update(target);
   } else if (componentData.greeting && target.value.length === 0) {
     if (componentData.greeting) $(componentData.greeting).removeClass('hidden');
     $(target).removeClass('modified');
-    if (componentData.typingTip) $(componentData.typingTip).addClass('hidden');
-    
+    if (componentData.typingTip) {
+      $(componentData.typingTip).html('ALIF is a BETA product, it also uses LLMS and may not always be correct with it\'s information. It\'s also not up to date, and will be updated soon. barakAllah feek.');
+    }
     // Update autosize when input is cleared
     autosizeWithUpdate.update(target);
   }

@@ -1,16 +1,13 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { calculateQiblaDirection, calculateDistanceToKaaba } from '../modules/qibla';
+  import { calculateQiblaDirection } from '../modules/qibla';
   import { t } from '$lib/i18n';
+  import { accentColor, gradientColor } from '$lib/stores/accentColor';
   
-  let map: google.maps.Map;
-  let qiblaLine: google.maps.Polyline;
-  let deviceDirectionLine: any;
   let leafletDeviceDirectionLine: any = null;
   
-  let userLocation: google.maps.LatLng | null = null;
+  let userLocation: { lat: number; lng: number } | null = null;
   let qiblaDirection: number = 0;
-  let distanceToKaaba: number = 0;
   let isLoading: boolean = true;
   let errorMessage: string = '';
   let watchId: number;
@@ -18,7 +15,6 @@
   let currentHeading: number = 0;
   let isCalibrating: boolean = false;
 
-  let useOpenStreetMap = false;
   let leafletMap: any = null;
   
   let isStarted: boolean = true;
@@ -29,36 +25,12 @@
   // Variable to store accuracy circle for updates
   let accuracyCircle: any = null;
   
+  // Add variables for compass accuracy tracking
+  let compassAccuracy: number = 0; // 0-1 scale where 1 is perfect accuracy
+  let isMobileDevice: boolean = false;
+  
   // Импортируем модуль NativeScript geolocation если он доступен
   let nativescriptGeolocation: any;
-
-  // Функция для проверки доступности расширенных маркеров Google Maps
-  function hasGoogleMapsAdvancedMarkers(): boolean {
-    return !!(
-      window.google && 
-      window.google.maps && 
-      google.maps.marker && 
-      google.maps.marker.AdvancedMarkerElement
-    );
-  }
-  
-  // Функция для перезагрузки Google Maps API если нет поддержки расширенных маркеров
-  function reloadGoogleMapsIfNeeded() {
-    if (window.google && window.google.maps && !hasGoogleMapsAdvancedMarkers()) {
-      console.log('Google Maps API loaded without marker library, reloading...');
-      // Удаляем все существующие скрипты Google Maps
-      document.querySelectorAll('script').forEach(script => {
-        if (script.src && script.src.includes('maps.googleapis.com')) {
-          script.remove();
-        }
-      });
-      // Очищаем API
-      (window as any).google = undefined;
-      // Перезагружаем API через основную функцию
-      return loadGoogleMapsAPI();
-    }
-    return Promise.resolve(true);
-  }
   
   let isUsingNativeDirection = false;
   
@@ -83,6 +55,28 @@
     }
   }
   
+  // Detect if device is mobile
+  function detectMobileDevice(): boolean {
+    return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) ||
+           (window.DeviceOrientationEvent !== undefined && typeof (window.DeviceOrientationEvent as any).requestPermission === 'function');
+  }
+  
+  // Calculate compass accuracy based on heading difference from qibla
+  function calculateCompassAccuracy(): number {
+    if (qiblaDirection === 0 || currentHeading === 0) return 0;
+    
+    let diff = Math.abs(currentHeading - qiblaDirection);
+    // Handle circular nature of compass (0° = 360°)
+    if (diff > 180) {
+      diff = 360 - diff;
+    }
+    
+    // Perfect accuracy within 5°, decreasing to 0 at 90°
+    if (diff <= 5) return 1;
+    if (diff >= 90) return 0;
+    return 1 - ((diff - 5) / 85);
+  }
+  
   onMount(() => {
     // Check if the component is actually visible in DOM
     const qiblaContainer = document.querySelector('.qibla-container');
@@ -91,7 +85,10 @@
       return;
     }
     
-    // Start qibla finder automatically
+    // Detect mobile device
+    isMobileDevice = detectMobileDevice();
+    
+    // Start qibla finder automatically with OpenStreetMap
     if (isStarted) {
       startQiblaFinder();
     }
@@ -206,229 +203,21 @@
     
     console.log("Map container found with dimensions:", rect.width, rect.height);
 
-    // Добавляем проверку на наличие библиотек Google Maps перед их использованием
-    if (window.google && window.google.maps) {
-      console.log('Google Maps already loaded, checking for marker library');
-      // Проверяем и при необходимости перезагружаем API
-      reloadGoogleMapsIfNeeded()
-        .then(() => {
-          // Инициализируем карту после проверки
-          initializeMap(mapElement);
-          loadUserLocation();
-        })
-        .catch((error) => {
-          console.error('Failed to reload Google Maps API:', error);
-          // Fall back to OpenStreetMap
-          useOpenStreetMap = true;
-          loadLeaflet()
-            .then(() => {
-              initializeLeafletMap(mapElement);
-              loadUserLocation();
-            })
-            .catch(() => {
-              errorMessage = 'Failed to load any map services. Please try again later.';
-              isLoading = false;
-            });
-        });
-      return;
-    }
-
-    // Try Google Maps first
-    loadGoogleMapsAPI()
+    // Use OpenStreetMap - prettier and no API key needed
+    console.log('Using OpenStreetMap for qibla direction');
+    loadLeaflet()
       .then(() => {
-        // Add a small delay to ensure DOM is ready
-        setTimeout(() => {
-          initializeMap(mapElement);
-          loadUserLocation();
-        }, 100);
+        initializeLeafletMap(mapElement);
+        loadUserLocation();
       })
       .catch((error: Error) => {
-        console.error('Google Maps failed to load, trying OpenStreetMap instead', error);
-        // Fall back to OpenStreetMap/Leaflet
-        useOpenStreetMap = true;
-        loadLeaflet()
-          .then(() => {
-            initializeLeafletMap(mapElement);
-            loadUserLocation();
-          })
-          .catch((error: Error) => {
-            errorMessage = 'Failed to load map services. Please try again later.';
-            isLoading = false;
-          });
+        errorMessage = 'Failed to load map services. Please try again later.';
+        isLoading = false;
       });
   }
+
   
-  async function loadGoogleMapsAPI() {
-    return new Promise((resolve, reject) => {
-      // Check if Google Maps API is already loaded
-      if (window.google && window.google.maps) {
-        // Проверяем доступность библиотеки marker
-        if (google.maps.marker && google.maps.marker.AdvancedMarkerElement) {
-          console.log('Google Maps API with marker library already loaded');
-          resolve(true);
-          return;
-        } else {
-          console.log('Google Maps API loaded but without marker library, reloading...');
-          (window as any).google = undefined;
-        }
-      }
-      
-      // Create callback function for Google Maps API
-      const callbackName = 'googleMapsInitialize_' + Math.random().toString(36).substr(2, 9);
-      (window as any)[callbackName] = () => {
-        resolve(true);
-        delete (window as any)[callbackName];
-      };
-      
-      // Create script element to load Google Maps API
-      const script = document.createElement('script');
-      script.src = `https://maps.googleapis.com/maps/api/js?key=${import.meta.env.VITE_GOOGLE_MAPS_API_KEY}&libraries=geometry,places,marker&callback=${callbackName}&loading=async&v=beta`;
-      script.async = true;
-      script.defer = true;
-      
-      // Add error handler
-      script.onerror = (error) => {
-        // Check if this might be due to ad blocker
-        if (navigator.onLine) {
-          errorMessage = 'Google Maps API failed to load. This may be due to an ad blocker or content blocker.';
-        } else {
-          errorMessage = 'Google Maps API failed to load. Please check your internet connection.';
-        }
-        
-        // Still update UI to show error
-        isLoading = false;
-        reject(new Error('Google Maps failed to load'));
-      };
-      
-      // Set timeout in case callback never fires
-      const timeoutId = setTimeout(() => {
-        if ((window as any)[callbackName]) {
-          delete (window as any)[callbackName];
-          errorMessage = 'Google Maps API load timeout. Please check your connection or try disabling ad blockers.';
-          isLoading = false;
-          reject(new Error('Google Maps API load timeout'));
-        }
-      }, 10000);
-      
-      document.head.appendChild(script);
-    });
-  }
-  
-  function initializeMap(mapElement: HTMLElement) {
-    try {
-      console.log('Initializing Google Maps...');
-      console.log('Map container dimensions:', mapElement.getBoundingClientRect());
-      
-      // Ensure map container is properly positioned
-      mapElement.style.position = 'absolute';
-      mapElement.style.top = '0';
-      mapElement.style.left = '0';
-      mapElement.style.width = '100%';
-      mapElement.style.height = '100%';
-      
-      // Create map with appropriate styling that matches the app's theme
-      const mapOptions = {
-        zoom: 17, // Increased zoom level to see building and surrounding streets (about 500m width)
-        center: { lat: 21.4225, lng: 39.8262 }, // Default to Kaaba
-        mapTypeId: google.maps.MapTypeId.ROADMAP,
-        disableDefaultUI: true,
-        zoomControl: true,
-        mapId: import.meta.env.VITE_GOOGLE_MAPS_MAP_ID || "DEMO_MAP_ID", // Use Map ID from environment variables or demo ID
-        styles: [
-          {
-            "featureType": "administrative",
-            "elementType": "all",
-            "stylers": [{ "visibility": "on" }, { "lightness": 33 }]
-          },
-          {
-            "featureType": "landscape",
-            "elementType": "all",
-            "stylers": [{ "color": "#f2e5d4" }]
-          },
-          {
-            "featureType": "poi.park",
-            "elementType": "geometry",
-            "stylers": [{ "color": "#c5dac6" }]
-          },
-          {
-            "featureType": "poi",
-            "elementType": "labels",
-            "stylers": [{ "visibility": "on" }]
-          },
-          {
-            "featureType": "road",
-            "elementType": "all",
-            "stylers": [{ "lightness": 20 }]
-          },
-          {
-            "featureType": "road.highway",
-            "elementType": "geometry",
-            "stylers": [{ "color": "#c5c6c6" }]
-          },
-          {
-            "featureType": "road.arterial",
-            "elementType": "geometry",
-            "stylers": [{ "color": "#e4d7c6" }]
-          },
-          {
-            "featureType": "road.local",
-            "elementType": "geometry",
-            "stylers": [{ "color": "#fbfaf7" }]
-          },
-          {
-            "featureType": "water",
-            "elementType": "all",
-            "stylers": [{ "visibility": "on" }, { "color": "#acbcc9" }]
-          }
-        ],
-        gestureHandling: 'greedy' // Improve mobile handling
-      };
-      
-      // Verify Google Maps API is loaded
-      if (!window.google || !window.google.maps) {
-        throw new Error('Google Maps API not loaded');
-      }
-      
-      // Create map
-      map = new google.maps.Map(mapElement, mapOptions);
-      
-      // Verify map was created successfully
-      if (!map) {
-        throw new Error('Failed to initialize Google Maps');
-      }
-      
-      console.log('Google Maps initialized successfully');
-      
-      // Add passive event listeners to improve performance
-      setupPassiveEventListeners(mapElement);
-      
-      // Make sure map re-renders correctly
-      if (google.maps && 'event' in google.maps) {
-        (google.maps as any).event.addListenerOnce(map, 'idle', () => {
-          console.log('Google Maps idle event fired');
-          // Force a resize event to ensure proper rendering
-          if (google.maps && 'event' in google.maps) {
-            (google.maps as any).event.trigger(map, 'resize');
-          }
-        });
-      }
-    } catch (e) {
-      console.error('Error initializing Google Maps:', e);
-      errorMessage = 'Failed to initialize Google Maps. Trying alternative map source...';
-      
-      // Fall back to OpenStreetMap
-      useOpenStreetMap = true;
-      loadLeaflet()
-        .then(() => {
-          initializeLeafletMap(mapElement);
-          loadUserLocation();
-        })
-        .catch((fallbackError: Error) => {
-          errorMessage = 'Failed to load any map services. Please try again later.';
-          isLoading = false;
-        });
-    }
-  }
+
   
   function loadUserLocation() {
     // Если доступен NativeScript geolocation, используем его
@@ -469,11 +258,7 @@
           nativescriptGeolocation.watchLocation(
             (location: any) => {
               // Обновляем положение
-              if (useOpenStreetMap) {
-                userLocation = { lat: location.latitude, lng: location.longitude } as any;
-              } else {
-                userLocation = new google.maps.LatLng(location.latitude, location.longitude);
-              }
+              userLocation = { lat: location.latitude, lng: location.longitude };
               
               // Обновляем точность
               locationAccuracy = location.accuracy;
@@ -490,9 +275,6 @@
               
               // Пересчитываем направление на Киблу
               qiblaDirection = calculateQiblaDirection(location.latitude, location.longitude);
-              
-              // Пересчитываем расстояние
-              distanceToKaaba = calculateDistanceToKaaba(location.latitude, location.longitude);
               
               // Обновляем карту
               updateMapWithLocation();
@@ -520,11 +302,7 @@
           const lat = position.coords.latitude;
           const lng = position.coords.longitude;
           
-          if (useOpenStreetMap) {
-            userLocation = { lat, lng } as any;
-          } else {
-            userLocation = new google.maps.LatLng(lat, lng);
-          }
+          userLocation = { lat, lng };
           
           // Обновляем точность
           if (position.coords.accuracy) {
@@ -541,9 +319,6 @@
           
           // Пересчитываем направление на Киблу
           qiblaDirection = calculateQiblaDirection(lat, lng);
-          
-          // Пересчитываем расстояние
-          distanceToKaaba = calculateDistanceToKaaba(lat, lng);
           
           // Обновляем карту
           updateMapWithLocation();
@@ -569,11 +344,7 @@
     // Обновляем текст точности
     updateAccuracyText(accuracy);
     
-    if (useOpenStreetMap) {
-      userLocation = { lat, lng } as any;
-    } else {
-      userLocation = new google.maps.LatLng(lat, lng);
-    }
+    userLocation = { lat, lng };
     
     // Проверяем, доступно ли направление устройства
     if (position.coords.heading !== null && position.coords.heading !== undefined) {
@@ -584,8 +355,8 @@
     // Рассчитываем направление на Киблу
     qiblaDirection = calculateQiblaDirection(lat, lng);
     
-    // Рассчитываем расстояние до Каабы
-    distanceToKaaba = calculateDistanceToKaaba(lat, lng);
+    // Calculate compass accuracy for UI feedback
+    compassAccuracy = calculateCompassAccuracy();
     
     // Обновляем карту с местоположением и линией Киблы
     // Pass true to automatically zoom to user location
@@ -676,6 +447,9 @@
       // Alpha is the compass direction the device is facing in degrees
       currentHeading = event.alpha;
       
+      // Calculate compass accuracy for UI feedback
+      compassAccuracy = calculateCompassAccuracy();
+      
       // Обновляем линию направления на карте если есть местоположение
       if (userLocation) {
         updateDeviceDirectionLine();
@@ -686,18 +460,15 @@
   function updateDeviceDirectionLine() {
     if (!userLocation) return;
     
-    if (useOpenStreetMap && leafletMap) {
+    if (leafletMap) {
       updateLeafletDeviceDirectionLine();
-    } else if (map) {
-      updateGoogleDeviceDirectionLine();
     }
   }
   
   function updateLeafletDeviceDirectionLine() {
-    if (!leafletMap || !userLocation) return;
+    if (!leafletMap || !userLocation || currentHeading === 0) return;
     
     // Calculate endpoint for the direction line
-    // Увеличиваем длину линии для лучшей видимости
     const headingRad = (currentHeading * Math.PI) / 180;
     
     // Clear previous line
@@ -705,9 +476,9 @@
       leafletMap.removeLayer(leafletDeviceDirectionLine);
     }
     
-    // Calculate the endpoint coordinates (simple approximation)
+    // Calculate the endpoint coordinates
     const R = 6378137; // Earth's radius in meters
-    const distance = 2000; // Увеличиваем длину линии до 2 км для лучшей видимости
+    const distance = 2000; // 2km line for compass direction
     
     // Convert to numbers and radians
     const lat1 = Number(userLocation.lat) * Math.PI / 180;
@@ -727,23 +498,27 @@
     const userLatLng = [userLocation.lat, userLocation.lng] as any;
     const endLatLng = [endLat, endLng] as any;
     
-    // Улучшаем стиль линии направления
+    // Color based on compass accuracy: red (poor) to green (perfect)
+    const red = Math.floor(255 * (1 - compassAccuracy));
+    const green = Math.floor(255 * compassAccuracy);
+    const compassColor = `rgb(${red}, ${green}, 0)`;
+    
+    // Draw compass direction line with accuracy-based color
     leafletDeviceDirectionLine = L.polyline([
       userLatLng,
       endLatLng
     ], {
-      color: '#FF5722',
-      weight: 5,       // Делаем линию толще
-      opacity: 0.9,    // Повышаем непрозрачность
-      dashArray: '10, 5' // Делаем пунктир более заметным
+      color: compassColor,
+      weight: 4,
+      opacity: 0.8,
+      dashArray: '8, 4' // Dashed line to differentiate from qibla line
     }).addTo(leafletMap);
     
-    // Добавляем маркер конечной точки для лучшей видимости направления
-    // Используем обычный маркер вместо divIcon для совместимости
+    // Add direction indicator at the end
     try {
       const directionMarker = L.circleMarker(endLatLng, {
-        radius: 8,
-        fillColor: '#FF5722',
+        radius: 6,
+        fillColor: compassColor,
         color: '#FFFFFF',
         weight: 2,
         opacity: 1,
@@ -751,85 +526,6 @@
       }).addTo(leafletMap);
     } catch (e) {
       console.warn('Failed to add direction marker to Leaflet map', e);
-    }
-  }
-  
-  function updateGoogleDeviceDirectionLine() {
-    if (!map || !userLocation) return;
-    
-    // Calculate endpoint for the direction line
-    // Увеличиваем длину линии для лучшей видимости
-    const headingRad = (currentHeading * Math.PI) / 180;
-    
-    // Remove previous line if exists
-    if (deviceDirectionLine) {
-      deviceDirectionLine.setMap(null);
-    }
-    
-    // Calculate the endpoint coordinates (simple approximation)
-    const R = 6378137; // Earth's radius in meters
-    const distance = 2000; // Увеличиваем длину линии до 2 км для лучшей видимости
-    
-    // Ensure we're working with numbers for calculation
-    const lat1 = Number(userLocation.lat()) * Math.PI / 180;
-    const lon1 = Number(userLocation.lng()) * Math.PI / 180;
-    
-    const lat2 = Math.asin(Math.sin(lat1) * Math.cos(distance / R) +
-                Math.cos(lat1) * Math.sin(distance / R) * Math.cos(headingRad));
-                
-    const lon2 = lon1 + Math.atan2(Math.sin(headingRad) * Math.sin(distance / R) * Math.cos(lat1),
-                      Math.cos(distance / R) - Math.sin(lat1) * Math.sin(lat2));
-    
-    // Convert back to degrees
-    const endLat = lat2 * 180 / Math.PI;
-    const endLng = lon2 * 180 / Math.PI;
-    
-    // Create endpoint coordinates
-    const endPoint = new google.maps.LatLng(endLat, endLng);
-    
-    // Create a better visible line
-    deviceDirectionLine = new google.maps.Polyline({
-      path: [userLocation, endPoint],
-      geodesic: true,
-      strokeColor: '#FF5722', // Оранжевый цвет для линии направления
-      strokeOpacity: 0.9,     // Повышаем непрозрачность
-      strokeWeight: 5         // Делаем линию толще
-    });
-    
-    // Apply the line to the map
-    deviceDirectionLine.setMap(map);
-    
-    // Добавляем маркер в конце линии для обозначения направления
-    try {
-      // Check if advanced markers are available
-      const hasAdvancedMarkers = hasGoogleMapsAdvancedMarkers();
-      
-      if (hasAdvancedMarkers) {
-        // Use the new AdvancedMarkerElement
-        new google.maps.marker.AdvancedMarkerElement({
-          position: endPoint,
-          map: map,
-          title: 'End of Direction',
-          content: document.createElement('div')
-        });
-      } else {
-        // Fall back to legacy Marker if needed
-        new google.maps.Marker({
-          position: endPoint,
-          map: map,
-          title: 'End of Direction',
-          icon: {
-            path: google.maps.SymbolPath.CIRCLE,
-            scale: 8,
-            fillColor: '#FF5722',
-            fillOpacity: 1,
-            strokeWeight: 2,
-            strokeColor: '#FFFFFF'
-          }
-        });
-      }
-    } catch (e) {
-      console.warn('Failed to add direction marker to Google Maps', e);
     }
   }
   
@@ -891,12 +587,9 @@
       firstLocationUpdate = false;
     }
     
-    if (useOpenStreetMap && leafletMap) {
+    if (leafletMap) {
       // OpenStreetMap/Leaflet implementation
       updateLeafletMap(autoZoom);
-    } else if (map) {
-      // Google Maps implementation
-      updateGoogleMap(autoZoom);
     }
     
     // Обновляем линию направления если есть значение для heading
@@ -912,32 +605,21 @@
     const zoomLevel = autoZoom ? 
                      (locationAccuracy > 1000 ? 15 : 
                       locationAccuracy > 500 ? 16 : 
-                      locationAccuracy > 100 ? 17 : 18) : 17; // Increased zoom levels to show approximately 500m width
+                      locationAccuracy > 100 ? 17 : 18) : 17;
     
     leafletMap.setView([userLocation.lat, userLocation.lng], zoomLevel);
     
     // Clear existing markers and lines
     leafletMap.eachLayer((layer: any) => {
-      if (layer instanceof L.Marker || layer instanceof L.Polyline || (layer as any).options && (layer as any).options.radius) {
+      if (layer instanceof L.Marker || layer instanceof L.Polyline || (layer as any).options && ((layer as any).options.radius !== undefined)) {
         leafletMap.removeLayer(layer);
       }
     });
     
-    // Create marker for user location
+    // Don't add user location marker - minimal UI
     const userLatLng = [userLocation.lat, userLocation.lng] as any;
-    const userMarker = L.circleMarker(userLatLng, {
-      radius: 8,
-      fillColor: '#4285F4',
-      color: '#ffffff',
-      weight: 2,
-      opacity: 1,
-      fillOpacity: 1
-    }).addTo(leafletMap);
     
-    // Add user location popup
-    userMarker.bindPopup('Your Location').openPopup();
-    
-    // Add accuracy circle if we have accuracy data
+    // Add accuracy circle if we have accuracy data (minimal)
     if (locationAccuracy > 0) {
       try {
         const circle = (L as any).circle(userLatLng, {
@@ -945,182 +627,69 @@
           fillColor: '#4285F4',
           color: '#4285F4',
           weight: 1,
-          opacity: 0.4,
-          fillOpacity: 0.1
+          opacity: 0.2,
+          fillOpacity: 0.05
         }).addTo(leafletMap);
       } catch (e) {
         console.warn('Failed to add accuracy circle to Leaflet map', e);
       }
     }
     
-    // Create marker for Kaaba
-    const kaabaLatLng = [21.4225, 39.8262] as any;
-    const kaabaMarker = L.circleMarker(kaabaLatLng, {
-      radius: 8,
-      fillColor: '#4CAF50',
-      color: '#ffffff',
-      weight: 2,
-      opacity: 1,
-      fillOpacity: 1
-    }).addTo(leafletMap);
+    // Calculate qibla line coordinates
+    const R = 6378137; // Earth's radius in meters
+    const distance = 2000000; // 2000km line for qibla direction
+    const qiblaRad = (qiblaDirection * Math.PI) / 180;
     
-    // Add Kaaba popup
-    kaabaMarker.bindPopup('Kaaba, Mecca');
+    const lat1 = Number(userLocation.lat) * Math.PI / 180;
+    const lon1 = Number(userLocation.lng) * Math.PI / 180;
     
-    // Draw line from user location to Kaaba
+    const lat2 = Math.asin(Math.sin(lat1) * Math.cos(distance / R) +
+                Math.cos(lat1) * Math.sin(distance / R) * Math.cos(qiblaRad));
+    const lon2 = lon1 + Math.atan2(Math.sin(qiblaRad) * Math.sin(distance / R) * Math.cos(lat1),
+                      Math.cos(distance / R) - Math.sin(lat1) * Math.sin(lat2));
+    
+    const qiblaEndLat = lat2 * 180 / Math.PI;
+    const qiblaEndLng = lon2 * 180 / Math.PI;
+    
+    // Draw main qibla line with accent color
     const qiblaPolyline = L.polyline([
       userLatLng,
-      kaabaLatLng
+      [qiblaEndLat, qiblaEndLng]
     ], {
-      color: '#00796B',
+      color: 'var(--accent-color)',
       weight: 3,
-      opacity: 0.8
+      opacity: 0.9
     }).addTo(leafletMap);
-  }
-  
-  function updateGoogleMap(autoZoom = false) {
-    if (!map || !userLocation) return;
     
-    // Убедимся, что API Google Maps полностью загружен с необходимыми библиотеками
-    if (!window.google || !window.google.maps) {
-      console.error('Google Maps API not loaded when trying to update map');
-      return;
-    }
+    // Add 15-degree tolerance area (semi-transparent)
+    const tolerance = 15; // degrees
     
-    // Center map on user location with appropriate zoom level based on accuracy
-    map.setCenter(userLocation);
+    // Calculate left boundary (qibla - 15°)
+    const leftAngleRad = ((qiblaDirection - tolerance) * Math.PI) / 180;
+    const leftLat2 = Math.asin(Math.sin(lat1) * Math.cos(distance / R) +
+                    Math.cos(lat1) * Math.sin(distance / R) * Math.cos(leftAngleRad));
+    const leftLon2 = lon1 + Math.atan2(Math.sin(leftAngleRad) * Math.sin(distance / R) * Math.cos(lat1),
+                        Math.cos(distance / R) - Math.sin(lat1) * Math.sin(leftLat2));
     
-    // If autoZoom is true, set zoom level based on location accuracy
-    if (autoZoom) {
-      // Increased zoom levels to show approximately 500m width on screen
-      const zoomLevel = locationAccuracy > 1000 ? 15 : 
-                       locationAccuracy > 500 ? 16 : 
-                       locationAccuracy > 100 ? 17 : 18;
-      map.setZoom(zoomLevel);
-    } else {
-      map.setZoom(17); // Default to high zoom level (about 500m width)
-    }
+    // Calculate right boundary (qibla + 15°)
+    const rightAngleRad = ((qiblaDirection + tolerance) * Math.PI) / 180;
+    const rightLat2 = Math.asin(Math.sin(lat1) * Math.cos(distance / R) +
+                     Math.cos(lat1) * Math.sin(distance / R) * Math.cos(rightAngleRad));
+    const rightLon2 = lon1 + Math.atan2(Math.sin(rightAngleRad) * Math.sin(distance / R) * Math.cos(lat1),
+                         Math.cos(distance / R) - Math.sin(lat1) * Math.sin(rightLat2));
     
-    // Remove previous accuracy circle if exists
-    if (accuracyCircle) {
-      accuracyCircle.setMap(null);
-    }
-    
-    try {
-      // Create the markerElement for user location
-      const userMarkerElement = document.createElement('div');
-      userMarkerElement.className = 'user-marker';
-      userMarkerElement.innerHTML = `
-        <div style="
-          width: 20px;
-          height: 20px;
-          border-radius: 50%;
-          background-color: #4285F4;
-          border: 2px solid white;
-        "></div>
-      `;
-      
-      // Check if advanced markers are available
-      const hasAdvancedMarkers = hasGoogleMapsAdvancedMarkers();
-      
-      if (hasAdvancedMarkers) {
-        // Use the new AdvancedMarkerElement
-        new google.maps.marker.AdvancedMarkerElement({
-          position: userLocation,
-          map: map,
-          title: 'Your Location',
-          content: userMarkerElement
-        });
-      } else {
-        // Fall back to legacy Marker if needed
-        new google.maps.Marker({
-          position: userLocation,
-          map: map,
-          title: 'Your Location',
-          icon: {
-            path: google.maps.SymbolPath.CIRCLE,
-            scale: 10,
-            fillColor: '#4285F4',
-            fillOpacity: 1,
-            strokeColor: '#ffffff',
-            strokeWeight: 2
-          }
-        });
-      }
-      
-      // Add accuracy circle if we have accuracy data
-      if (locationAccuracy > 0) {
-        accuracyCircle = new (google.maps as any).Circle({
-          center: userLocation,
-          radius: locationAccuracy,
-          map: map,
-          fillColor: '#4285F4',
-          fillOpacity: 0.1,
-          strokeColor: '#4285F4',
-          strokeOpacity: 0.4,
-          strokeWeight: 1
-        });
-      }
-      
-      // Create marker for Kaaba
-      const kaabaLocation = new google.maps.LatLng(21.4225, 39.8262);
-      
-      // Create the marker element for Kaaba
-      const kaabaMarkerElement = document.createElement('div');
-      kaabaMarkerElement.className = 'kaaba-marker';
-      kaabaMarkerElement.innerHTML = `
-        <div style="
-          width: 20px;
-          height: 20px;
-          border-radius: 50%;
-          background-color: #4CAF50;
-          border: 2px solid white;
-        "></div>
-      `;
-      
-      if (hasAdvancedMarkers) {
-        // Use the new AdvancedMarkerElement
-        new google.maps.marker.AdvancedMarkerElement({
-          position: kaabaLocation,
-          map: map,
-          title: 'Kaaba, Mecca',
-          content: kaabaMarkerElement
-        });
-      } else {
-        // Fall back to legacy Marker if needed
-        new google.maps.Marker({
-          position: kaabaLocation,
-          map: map,
-          title: 'Kaaba, Mecca',
-          icon: {
-            path: google.maps.SymbolPath.CIRCLE,
-            scale: 10,
-            fillColor: '#4CAF50',
-            fillOpacity: 1,
-            strokeColor: '#ffffff',
-            strokeWeight: 2
-          }
-        });
-      }
-      
-      // Remove previous line if exists
-      if (qiblaLine) {
-        qiblaLine.setMap(null);
-      }
-      
-      // Draw line from user location to Kaaba
-      qiblaLine = new google.maps.Polyline({
-        path: [userLocation, kaabaLocation],
-        geodesic: true,
-        strokeColor: '#00796B',
-        strokeOpacity: 0.8,
-        strokeWeight: 3
-      });
-      
-      qiblaLine.setMap(map);
-    } catch (error) {
-      console.error('Error updating Google Maps:', error);
-    }
+    // Create tolerance area polygon
+    const toleranceArea = (L as any).polygon([
+      userLatLng,
+      [leftLat2 * 180 / Math.PI, leftLon2 * 180 / Math.PI],
+      [rightLat2 * 180 / Math.PI, rightLon2 * 180 / Math.PI]
+    ], {
+      color: 'var(--accent-color)',
+      weight: 1,
+      opacity: 0.3,
+      fillColor: 'var(--accent-color)',
+      fillOpacity: 0.1
+    }).addTo(leafletMap);
   }
   
   // Function to add passive event listeners to the map container
@@ -1172,8 +741,10 @@
   
   function initializeLeafletMap(mapElement: HTMLElement) {
     try {
-      // Create Leaflet map
-      leafletMap = L.map(mapElement).setView([21.4225, 39.8262], 3);
+      // Create Leaflet map with disabled zoom controls
+      leafletMap = L.map(mapElement, {
+        zoomControl: false // Remove zoom buttons
+      }).setView([21.4225, 39.8262], 3);
       
       // Add OpenStreetMap tile layer with a warm-colored style that fits the app's theme
       L.tileLayer('https://{s}.tile.openstreetmap.fr/hot/{z}/{x}/{y}.png', {
@@ -1204,6 +775,8 @@
 </script>
 
 <div class="qibla-container">
+  <div id="map"></div>
+  
   {#if isLoading}
     <div class="loading">
       <div class="spinner"></div>
@@ -1215,45 +788,6 @@
       <button on:click={startQiblaFinder}>
         {t('retry')}
       </button>
-    </div>
-  {:else}
-    
-    <div class="qibla-info">
-      <div class="qibla-card">
-        <h2>{t('qibla_title')}</h2>
-        <div class="direction-value">{qiblaDirection.toFixed(1)}° {t('qibla_degrees')}</div>
-        <div class="distance-value">{(distanceToKaaba / 1000).toFixed(0)} km</div>
-        
-        <div class="accuracy-info" class:low-accuracy={locationAccuracy > 100} class:medium-accuracy={locationAccuracy > 50 && locationAccuracy <= 100}>
-          <span class="accuracy-icon">
-            {#if locationAccuracy <= 50}
-              <i class="material-icons">gps_fixed</i>
-            {:else if locationAccuracy <= 100}
-              <i class="material-icons">gps_not_fixed</i>
-            {:else}
-              <i class="material-icons">gps_off</i>
-            {/if}
-          </span>
-          <span>{accuracyText}</span>
-          
-          {#if locationAccuracy > 100}
-            <div class="accuracy-warning">
-              {t('qibla_accuracy')}
-            </div>
-          {/if}
-        </div>
-        
-        <div class="device-heading-info">
-          <span class="device-icon">
-            <i class="material-icons">navigation</i>
-          </span>
-          <span>{t('qibla_north')}</span>
-        </div>
-        
-        <button class="calibrate-button" on:click={calibrateCompass}>
-          {t('retry')}
-        </button>
-      </div>
     </div>
   {/if}
   
@@ -1290,45 +824,27 @@
     z-index: 1;
   }
   
-  .ui-overlay {
+  .loading {
     position: absolute;
     top: 0;
     left: 0;
     width: 100%;
     height: 100%;
-    z-index: 2;
-    pointer-events: none; /* Позволит кликать через оверлей на карту */
-  }
-  
-  /* Делаем все интерактивные элементы доступными для нажатия */
-  .location-note, .start-screen, .loading, .error, .qibla-info, .calibration-overlay {
-    pointer-events: auto;
-  }
-  
-  /* Добавляем полупрозрачный фон для всех блоков информации */
-  .qibla-card, .location-note, .start-screen, .error {
-    background: rgba(255, 248, 231, 0.8);
-    backdrop-filter: blur(5px); /* Добавляем blur эффект для современных браузеров */
-    border-radius: 8px;
-    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.15);
-  }
-  
-  .loading {
     display: flex;
     flex-direction: column;
     justify-content: center;
     align-items: center;
-    height: 100%;
-    background-color: #000000;
+    background: linear-gradient(135deg, rgba(0, 0, 0, 0.95), rgba(0, 0, 0, 0.9));
+    backdrop-filter: blur(10px);
     color: #ffffff;
-    border-radius: 8px;
+    z-index: 1000;
   }
   
   .spinner {
     width: 50px;
     height: 50px;
-    border: 5px solid rgba(0, 0, 0, 0.1);
-    border-top-color: #00796B;
+    border: 5px solid rgba(255, 255, 255, 0.2);
+    border-top-color: var(--accent-color);
     border-radius: 50%;
     animation: spin 1s linear infinite;
     margin-bottom: 20px;
@@ -1339,121 +855,40 @@
   }
   
   .error {
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-    align-items: center;
-    height: 100%;
-    padding: 20px;
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: linear-gradient(135deg, rgba(255, 248, 231, 0.95), rgba(255, 248, 231, 0.9));
+    backdrop-filter: blur(10px);
+    border-radius: 16px;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.15);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    padding: 24px;
     text-align: center;
+    z-index: 1000;
+    max-width: 320px;
   }
   
   .error button {
     margin-top: 20px;
-    padding: 10px 20px;
-    background-color: #00796B;
+    padding: 12px 24px;
+    background: var(--gradient-color, linear-gradient(135deg, var(--accent-color), var(--accent-color)));
     color: white;
     border: none;
-    border-radius: 4px;
+    border-radius: 8px;
     cursor: pointer;
     font-size: 16px;
+    font-weight: 600;
+    transition: all 0.3s ease;
+    box-shadow: 0 4px 16px rgba(var(--accent-color-rgb, 0, 114, 255), 0.3);
+    background-size: 200% 100%;
+    background-position: 0% center;
   }
   
-  .qibla-info {
-    position: absolute;
-    bottom: 20px;
-    right: 20px;
-    z-index: 100;
-  }
-  
-  .qibla-card {
-    padding: 16px;
-    max-width: 300px;
-    text-align: center;
-  }
-  
-  .qibla-card h2 {
-    margin-top: 0;
-    color: #00796B;
-    font-size: 20px;
-  }
-  
-  .direction-value {
-    font-size: 24px;
-    font-weight: bold;
-    margin: 8px 0;
-  }
-  
-  .distance-value {
-    font-size: 16px;
-    margin-bottom: 16px;
-    color: #555;
-  }
-  
-  .accuracy-info {
-    font-size: 14px;
-    margin-bottom: 16px;
-    padding: 8px;
-    border-radius: 4px;
-    background-color: rgba(255, 255, 255, 0.5);
-    display: flex;
-    align-items: center;
-    flex-wrap: wrap;
-    justify-content: center;
-  }
-  
-  .accuracy-icon {
-    margin-right: 8px;
-    font-size: 16px;
-  }
-  
-  .low-accuracy {
-    background-color: rgba(255, 235, 235, 0.8);
-    border-left: 3px solid #ff5252;
-  }
-  
-  .medium-accuracy {
-    background-color: rgba(255, 243, 224, 0.8);
-    border-left: 3px solid #ff9800;
-  }
-  
-  .accuracy-warning {
-    width: 100%;
-    margin-top: 4px;
-    font-size: 12px;
-    color: #d32f2f;
-    font-weight: bold;
-  }
-  
-  .device-heading-info {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 8px;
-    margin-bottom: 16px;
-    background-color: rgba(255, 87, 34, 0.2);
-    border-radius: 4px;
-    border-left: 3px solid #FF5722;
-    font-size: 14px;
-  }
-  
-  .device-icon {
-    margin-right: 8px;
-  }
-  
-  .calibrate-button {
-    background-color: #00796B;
-    color: white;
-    border: none;
-    border-radius: 4px;
-    padding: 8px 16px;
-    cursor: pointer;
-    font-size: 14px;
-    transition: background-color 0.3s;
-  }
-  
-  .calibrate-button:hover {
-    background-color: #005b4f;
+  .error button:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px rgba(var(--accent-color-rgb, 0, 114, 255), 0.4);
   }
   
   .calibration-overlay {
@@ -1470,11 +905,14 @@
   }
   
   .calibration-content {
-    background-color: white;
-    padding: 20px;
-    border-radius: 8px;
+    background: linear-gradient(135deg, rgba(255, 255, 255, 0.95), rgba(255, 255, 255, 0.9));
+    backdrop-filter: blur(10px);
+    padding: 24px;
+    border-radius: 16px;
     text-align: center;
     max-width: 80%;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
   }
   
   .figure-eight {
@@ -1491,7 +929,7 @@
     width: 50px;
     height: 50px;
     border-radius: 50%;
-    border: 3px solid #00796B;
+    border: 3px solid var(--accent-color);
     box-sizing: border-box;
   }
   
@@ -1503,68 +941,8 @@
     right: 0;
   }
   
-  /* Responsive styling */
-  @media (max-width: 768px) {
-    .qibla-card {
-      max-width: 250px;
-    }
-  }
-  
-  .start-screen {
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-    align-items: center;
-    height: 100%;
-    text-align: center;
-    padding: 20px;
-  }
-  
-  .start-screen h1 {
-    color: #00796B;
-    margin-bottom: 16px;
-  }
-  
-  .start-screen p {
-    margin-bottom: 32px;
-    color: #555;
-    font-size: 18px;
-  }
-  
-  .start-button {
-    background-color: #00796B;
-    color: white;
-    border: none;
-    border-radius: 4px;
-    padding: 12px 24px;
-    font-size: 18px;
-    cursor: pointer;
-    transition: background-color 0.3s;
-    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
-  }
-  
-  .start-button:hover {
-    background-color: #005b4f;
-  }
-  
-  .location-note {
-    position: absolute;
-    top: 20px;
-    left: 20px;
-    padding: 8px 12px;
-    border-radius: 4px;
-    font-size: 14px;
-    z-index: 100;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-  }
-  
-  .note-icon {
-    font-size: 16px;
-  }
-  
-  .note-text {
-    color: #555;
+  /* Ensure accent color variables are available */
+  :global(:root) {
+    --accent-color-rgb: 0, 114, 255;
   }
 </style>

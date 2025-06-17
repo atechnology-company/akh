@@ -5,6 +5,7 @@ import { ASR_METHODS } from '../modules/prayerCalculation';
 import { fade, fly } from 'svelte/transition';
 import { formatDate } from '../modules/dateUtils';
 import { hijriDateStore } from '../modules/salah';
+import { accentColor, gradientColor } from '$lib/stores/accentColor';
 
 // Responsive design - detect mobile devices
 let isMobile = false;
@@ -509,7 +510,7 @@ function checkOverlay() {
     'isha': 'linear-gradient(135deg, #0f2027, #203a43, #2c5364)'
   };
   // Apply the current prayer gradient directly without transitions
-  document.documentElement.style.setProperty('--prayer-gradient', prayerGradients[currentPrayer]);
+  document.documentElement.style.setProperty('--gradient-color', prayerGradients[currentPrayer]);
   // Also update welcome gradient to match current prayer
   document.documentElement.style.setProperty('--welcome-gradient', prayerGradients[currentPrayer]);
   
@@ -1298,7 +1299,7 @@ function updateTimeRemaining() {
 }
 
 .save-btn {
-  background: var(--prayer-gradient, linear-gradient(135deg, #1a2a6c, #b21f1f, #fdbb2d));
+  background: var(--gradient-color);
   color: white;
   border: none;
   box-shadow: 0 4px 10px rgba(0, 0, 0, 0.3);
@@ -1407,7 +1408,7 @@ function updateTimeRemaining() {
 }
 
 .toggle-btn.active {
-  background: var(--prayer-gradient, linear-gradient(135deg, #1a2a6c, #b21f1f, #fdbb2d));
+  background: var(--gradient-color);
   border-color: transparent;
 }
 
@@ -1759,7 +1760,7 @@ function updateTimeRemaining() {
 }
 
 .add-mosque-btn {
-  background: var(--prayer-gradient, linear-gradient(135deg, #1a2a6c, #b21f1f, #fdbb2d));
+  background: var(--gradient-color);
   color: #fff;
   border: none;
   border-radius: 8px;
@@ -1800,7 +1801,7 @@ function updateTimeRemaining() {
 }
 
 .mosque-list-item.selected {
-  background: var(--prayer-gradient);
+  background: var(--gradient-color);
 }
 
 .sidebar-header {
@@ -1916,7 +1917,7 @@ function updateTimeRemaining() {
 }
 
 .toggle-btn.active {
-  background: var(--prayer-gradient);
+  background: var(--gradient-color);
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
 }
 
@@ -2022,7 +2023,7 @@ function updateTimeRemaining() {
 }
 
 .form-actions button.primary {
-  background: var(--prayer-gradient, #2d8cff);
+  background: var(--accent-color);
   color: white;
   border: none;
   position: relative;
@@ -2251,7 +2252,7 @@ function updateTimeRemaining() {
 .iqamah-settings input, .iqamah-input {
   background: rgba(255, 255, 255, 0.1);
   color: white;
-  border: 1px solid var(--prayer-gradient);
+  border: 1px solid var(--gradient-color);
   border-radius: 4px;
   padding: 8px;
 }
@@ -2275,7 +2276,7 @@ function updateTimeRemaining() {
 }
 
 .toggle-btn.active {
-  background: var(--prayer-gradient);
+  background: var(--gradient-color);
   font-weight: 500;
 }
 
@@ -2302,7 +2303,7 @@ function updateTimeRemaining() {
 }
 
 .settings-option input[type="checkbox"]  {
-  background: var(--prayer-gradient);
+  background: var(--gradient-color);
 }
 
 .reload-button {
@@ -2319,7 +2320,7 @@ function updateTimeRemaining() {
 }
 
 .reload-button:hover {
-  background: var(--prayer-gradient);
+  background: var(--gradient-color);
 }
 
 .prayer-times-container {
@@ -2500,7 +2501,7 @@ function updateTimeRemaining() {
     {:else}
       <div class="three-section-layout" class:mobile-layout={windowWidth <= 768}>
       <!-- Section 1: Main display with gradient background (50%) -->
-      <div class="main-section" style="background: var(--prayer-gradient)">
+      <div class="main-section" style="background: var(--gradient-color)">
         <div class="topleft">
           <div class="mosque-name">{selectedMosque.name}</div>
           <div class="gregorian-date">{gregorianDate}</div>
@@ -2874,7 +2875,7 @@ function updateTimeRemaining() {
 {#if showAddModal}
   <div class="fullscreen-modal" transition:fade={{ duration: 300 }}>
     <div class="fullscreen-modal-content" transition:fly={{ y: 30, duration: 400 }}>
-      <div class="modal-header" style="background: var(--prayer-gradient, linear-gradient(135deg, #1a2a6c, #b21f1f, #fdbb2d));">
+      <div class="modal-header" style="background: var(--gradient-color);">
         <h2>Add New Mosque</h2>
         <button class="close-btn" on:click={() => showAddModal = false}>×</button>
       </div>
@@ -2973,7 +2974,7 @@ function updateTimeRemaining() {
       <div class="modal-footer">
         <button 
           on:click={addNewMosque}
-          style="background: var(--prayer-gradient, linear-gradient(135deg, #1a2a6c, #b21f1f, #fdbb2d)); color: white; border: none; padding: 10px 20px; border-radius: 4px; cursor: pointer;"
+          style="background: var(--gradient-color); color: white; border: none; padding: 10px 20px; border-radius: 4px; cursor: pointer;"
         >
           Add Mosque
         </button>

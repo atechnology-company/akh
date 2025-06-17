@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // netlify-build.js
-// Script to create a production build and ensure correct Netlify SPA fallback
+// Script to create a production build for SvelteKit SSR on Netlify
 import { execSync } from 'child_process';
 import fs from 'fs';
 import path, { dirname } from 'path';
@@ -15,13 +15,14 @@ const colors = {
   cyan: '\x1b[36m'
 };
 
-console.log(`${colors.cyan}Starting Netlify build process...${colors.reset}`);
+console.log(`${colors.cyan}Starting Netlify SvelteKit SSR build process...${colors.reset}`);
 
 try {
+  console.log(`${colors.yellow}Syncing SvelteKit...${colors.reset}`);
+  execSync('npx @sveltejs/kit sync', { stdio: 'inherit' });
+  
   console.log(`${colors.yellow}Running SvelteKit build...${colors.reset}`);
-  execSync('npx @sveltejs/kit sync && npm run build', { stdio: 'inherit' });
-  console.log(`${colors.yellow}Running SvelteKit build...${colors.reset}`);
-  execSync('npx vite build --mode production', { stdio: 'inherit' });
+  execSync('npm run build:web', { stdio: 'inherit' });
 } catch (error) {
   console.error(`${colors.red}Build failed:${colors.reset}`, error);
   process.exit(1);
@@ -38,42 +39,13 @@ if (!fs.existsSync(buildDir)) {
   process.exit(1);
 }
 
-// Copy _redirects file to build directory
-try {
-  const redirectsSource = path.resolve(__dirname, '_redirects');
-  const redirectsDest = path.resolve(buildDir, '_redirects');
-  
-  if (fs.existsSync(redirectsSource)) {
-    fs.copyFileSync(redirectsSource, redirectsDest);
-    console.log(`${colors.green}Copied _redirects file to build directory${colors.reset}`);
-  } else {
-    // Create _redirects file if it doesn't exist
-    fs.writeFileSync(redirectsDest, '/* /index.html 200');
-    console.log(`${colors.yellow}Created new _redirects file in build directory${colors.reset}`);
-  }
-} catch (error) {
-  console.error(`${colors.red}Error handling _redirects file:${colors.reset}`, error);
-  process.exit(1);
+console.log(`${colors.green}SvelteKit SSR build completed successfully!${colors.reset}`);
+console.log(`${colors.cyan}Build artifacts created in: ${buildDir}${colors.reset}`);
+
+// Check if netlify function was created
+const netlifyFunctionsDir = path.resolve(buildDir, '.netlify', 'functions');
+if (fs.existsSync(netlifyFunctionsDir)) {
+  console.log(`${colors.green}Netlify Functions directory found - SSR is properly configured${colors.reset}`);
+} else {
+  console.log(`${colors.yellow}Note: No .netlify/functions directory found. This might be expected for static builds.${colors.reset}`);
 }
-
-// Generate a fallback netlify.toml in the build directory (belt and suspenders approach)
-try {
-  const netlifyTomlContent = `
-# This file was automatically generated during build
-[build]
-  publish = "."
-
-# Fallback for SPA routing
-[[redirects]]
-  from = "/*"
-  to = "/index.html"
-  status = 200
-`;
-  
-  fs.writeFileSync(path.resolve(buildDir, 'netlify.toml'), netlifyTomlContent.trim());
-  console.log(`${colors.green}Created netlify.toml in build directory${colors.reset}`);
-} catch (error) {
-  console.error(`${colors.red}Error creating netlify.toml in build directory:${colors.reset}`, error);
-}
-
-console.log(`${colors.cyan}Build process completed successfully!${colors.reset}`);

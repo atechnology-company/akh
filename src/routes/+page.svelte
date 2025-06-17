@@ -1,4 +1,3 @@
-<!-- بسم الله الرحمن الرحيم-->
 <script lang="ts">
     import { onMount } from 'svelte';
     import { fade, fly, slide } from 'svelte/transition';
@@ -10,13 +9,14 @@
     import qibla from '../components/qibla.svelte';
     import salah from '../components/salah.svelte';
     import alif from '../components/alif.svelte';
+    import quran from '../components/quran.svelte';
     import { goto } from '$app/navigation';
     import { accentColor, gradientColor } from '$lib/stores/accentColor';
     import { prayerTimesStore, initializePrayerTimes, refreshPrayerTimes } from '../modules/salah';
 
     // Create separate arrays for desktop and mobile
-    let allPages = [about, mosques, qibla, salah, alif];
-    let allPageNames = ['ABOUT', 'MOSQUES', 'QIBLA', 'SALAH', 'ALIF'];
+    let allPages = [about, mosques, qibla, salah, quran, alif];
+    let allPageNames = ['ABOUT', 'MOSQUES', 'QIBLA', 'SALAH', 'QURAN', 'ALIF'];
     
     // Dynamically set pages based on device
     $: pages = isMobile ? allPages.filter(page => page !== mosques) : allPages;
@@ -45,6 +45,13 @@
     let isSwiping = false;
     let swipeProgress = 0;
     let swipeTarget = 0;
+    
+    // Motion/shake detection for page carousel
+    let isCarouselMode = false;
+    let motionPermissionGranted = false;
+    let shakeDetectionActive = false;
+    let lastAcceleration = { x: 0, y: 0, z: 0 };
+    let shakeThreshold = 8; // Lowered sensitivity for shake detection
 
     // Subscribe to prayer times to get current prayer
     const unsubscribePrayerTimes = prayerTimesStore.subscribe(value => {
@@ -193,6 +200,14 @@
         checkMobile();
         window.addEventListener('resize', checkMobile);
 
+        // Setup motion detection for mobile devices - delay to ensure isMobile is set
+        setTimeout(() => {
+            if (isMobile) {
+                console.log('Setting up motion detection on mobile device');
+                setupMotionDetection();
+            }
+        }, 100);
+
         // Load prayer times after a small delay
         setTimeout(async () => {
             await loadPrayerTimes();
@@ -200,6 +215,9 @@
 
         return () => {
             window.removeEventListener('resize', checkMobile);
+            if (shakeDetectionActive) {
+                window.removeEventListener('devicemotion', handleDeviceMotion);
+            }
             unsubscribePrayerTimes();
         };
     });
@@ -252,7 +270,26 @@
             const deltaX = currentX - touchStartX;
             const deltaY = currentY - touchStartY;
             
-            // Only trigger swipe animation for horizontal movement (left/right)
+            // In carousel mode, always allow swiping
+            if (isCarouselMode) {
+                const isHorizontalSwipe = Math.abs(deltaX) > Math.abs(deltaY) && Math.abs(deltaX) > 20;
+                
+                if (isHorizontalSwipe) {
+                    isSwiping = true;
+                    swipeProgress = Math.min(Math.max(deltaX / window.innerWidth, -0.5), 0.5);
+                    
+                    if (swipeProgress > 0.1) {
+                        swipeTarget = (currentPageIndex - 1 + pages.length) % pages.length;
+                    } else if (swipeProgress < -0.1) {
+                        swipeTarget = (currentPageIndex + 1) % pages.length;
+                    } else {
+                        swipeTarget = currentPageIndex;
+                    }
+                }
+                return;
+            }
+            
+            // Only trigger swipe animation for horizontal movement in normal mode
             // Ignore vertical movements with a stricter threshold to prevent janky animations
             const isHorizontalSwipe = Math.abs(deltaX) > Math.abs(deltaY) && Math.abs(deltaX) > 20;
             
@@ -287,6 +324,38 @@
         const swipeDistance = touchEndX - touchStartX;
         const swipeTime = Date.now() - touchStartTime;
         
+        // Handle carousel mode touches
+        if (isCarouselMode) {
+            // Check if tap was on a page switcher item (let those handle their own clicks)
+            const target = e.target as HTMLElement;
+            if (target.closest('.carousel-page-item')) {
+                // Let the page item click handler deal with this
+                isSwiping = false;
+                swipeProgress = 0;
+                return;
+            }
+            
+            // In carousel mode, use tap zones for quick navigation
+            const screenWidth = window.innerWidth;
+            const tapZoneWidth = screenWidth / 3; // Divide screen into 3 zones
+            
+            if (touchEndX < tapZoneWidth) {
+                // Left third - go to previous page
+                prevPage();
+            } else if (touchEndX > screenWidth - tapZoneWidth) {
+                // Right third - go to next page
+                nextPage();
+            } else {
+                // Middle third - exit carousel mode
+                exitCarouselMode();
+            }
+            
+            isSwiping = false;
+            swipeProgress = 0;
+            return;
+        }
+        
+        // Normal swipe handling
         if (Math.abs(swipeDistance) > 50) { // minimum swipe distance
             if (swipeDistance > 0) {
                 prevPage();
@@ -327,6 +396,7 @@
     function checkMobile() {
         const wasMobile = isMobile;
         isMobile = window.innerWidth < 768;
+        console.log('Mobile check:', { isMobile, width: window.innerWidth });
         
         // If transitioning between mobile and desktop, adjust current page index
         if (wasMobile !== isMobile) {
@@ -345,14 +415,142 @@
             // If switching to desktop, we don't need to adjust as all tabs are visible
         }
     }
-</script>
 
-<svelte:head>
-    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Onest:wght@400;700&family=Chivo+Mono:wght@400;700&display=swap">
-    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" />
-    <link rel="stylesheet" href="https://fonts.googleapis.com/icon?family=Material+Icons">
-    <title>akh</title>
-</svelte:head>
+    // Request motion permission and setup shake detection
+    async function setupMotionDetection() {
+        if (!browser || !isMobile) return;
+        
+        console.log('Setting up motion detection...');
+        
+        try {
+            // Check if DeviceMotionEvent exists and requires permission (iOS 13+)
+            if (typeof DeviceMotionEvent !== 'undefined' && 'requestPermission' in DeviceMotionEvent) {
+                console.log('Requesting motion permission for iOS...');
+                // For iOS, we need to request permission with user interaction
+                // Let's add the event listener first and request permission when user interacts
+                motionPermissionGranted = false;
+                
+                // Add a one-time touch listener to request permission
+                const requestPermissionOnTouch = async () => {
+                    try {
+                        const permission = await (DeviceMotionEvent as any).requestPermission();
+                        motionPermissionGranted = permission === 'granted';
+                        console.log('Motion permission result:', permission);
+                        
+                        if (motionPermissionGranted) {
+                            window.addEventListener('devicemotion', handleDeviceMotion);
+                            shakeDetectionActive = true;
+                            console.log('Motion detection activated');
+                        }
+                    } catch (e) {
+                        console.error('Error requesting motion permission:', e);
+                    }
+                    
+                    // Remove this one-time listener
+                    document.removeEventListener('touchstart', requestPermissionOnTouch);
+                };
+                
+                document.addEventListener('touchstart', requestPermissionOnTouch, { once: true });
+            } else {
+                // Android or older iOS - no permission needed
+                console.log('Adding motion listener for Android/older iOS...');
+                motionPermissionGranted = true;
+                window.addEventListener('devicemotion', handleDeviceMotion);
+                shakeDetectionActive = true;
+                console.log('Motion detection activated');
+            }
+        } catch (error) {
+            console.error('Error setting up motion detection:', error);
+        }
+    }
+    
+    // Handle device motion for shake detection
+    function handleDeviceMotion(event: DeviceMotionEvent) {
+        if (!event.accelerationIncludingGravity || isCarouselMode) return;
+        
+        const acceleration = event.accelerationIncludingGravity;
+        const x = acceleration.x || 0;
+        const y = acceleration.y || 0;
+        const z = acceleration.z || 0;
+        
+        // Calculate the magnitude of acceleration change
+        const deltaX = Math.abs(x - lastAcceleration.x);
+        const deltaY = Math.abs(y - lastAcceleration.y);
+        const deltaZ = Math.abs(z - lastAcceleration.z);
+        
+        const totalDelta = deltaX + deltaY + deltaZ;
+        
+        // Log motion data for debugging (remove in production)
+        if (totalDelta > 5) {
+            console.log('Motion detected:', { totalDelta, x, y, z, deltaX, deltaY, deltaZ });
+        }
+        
+        // Detect shake gesture with lower threshold
+        if (totalDelta > shakeThreshold) {
+            console.log('Shake detected!', totalDelta);
+            enterCarouselMode();
+        }
+        
+        lastAcceleration = { x, y, z };
+    }
+    
+    // Enter carousel mode
+    function enterCarouselMode() {
+        if (isCarouselMode) return;
+        
+        isCarouselMode = true;
+        console.log('Entering carousel mode');
+        
+        // Haptic feedback if available
+        if ('vibrate' in navigator) {
+            navigator.vibrate(100);
+        }
+        
+        // Auto-exit after 10 seconds if no interaction
+        setTimeout(() => {
+            if (isCarouselMode) {
+                exitCarouselMode();
+            }
+        }, 10000);
+    }
+    
+    // Exit carousel mode
+    function exitCarouselMode() {
+        isCarouselMode = false;
+        isSwiping = false;
+        swipeProgress = 0;
+        console.log('Exiting carousel mode');
+    }
+    
+    // Handle carousel swipe navigation
+    function handleCarouselSwipe(direction: 'left' | 'right') {
+        if (!isCarouselMode) return;
+        
+        if (direction === 'left') {
+            nextPage();
+        } else {
+            prevPage();
+        }
+    }
+    
+    // Handle carousel tap to select page
+    function handleCarouselTap() {
+        if (isCarouselMode) {
+            exitCarouselMode();
+        }
+    }
+    
+    // Handle direct page selection in carousel mode
+    function handleCarouselPageSelect(index: number) {
+        if (isCarouselMode) {
+            setPage(index);
+            // Add a small delay before exiting to show the transition
+            setTimeout(() => {
+                exitCarouselMode();
+            }, 200);
+        }
+    }
+</script>
 
 <style>
     :global(:root) {
@@ -399,7 +597,7 @@
         top: 0;
         left: 0;
         width: 100%;
-        height: 60px;
+        height: 30px;
         z-index: 99;
         background: transparent;
     }
@@ -471,7 +669,7 @@
 
     .carousel {
         position: relative;
-        width: 98%;
+        width: calc(100vw - 2vh); /* how did i not think of this before? tf */
         height: 98vh;
         margin: 1vh auto;
         overflow: hidden;
@@ -481,6 +679,12 @@
         border-radius: 8px;
         transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
         z-index: 2;
+    }
+    
+    .carousel.carousel-mode {
+        transform: scale(0.8);
+        border: 2px solid rgba(255, 255, 255, 0.3);
+        box-shadow: 0 0 20px rgba(255, 255, 255, 0.2);
     }
 
     .carousel.header-visible {
@@ -493,7 +697,7 @@
             display: none;
         }
         .carousel {
-            width: 98%;
+            width: calc(100vw - 2vh);
             height: 98vh;
             margin: 1vh auto;
             border-radius: 8px;
@@ -518,7 +722,7 @@
         top: 0;
         left: 0;
         overflow: hidden;
-        transform: translateZ(0); /* Force GPU acceleration */
+        transform: translateZ(0);
     }
     
     /* Swipe indicator styles - similar to salah.svelte */
@@ -621,78 +825,17 @@
         }
     }
     
-    /* App switcher styles for mobile */
-    .app-switcher {
-        position: absolute;
-        bottom: 10px;
-        left: 0;
-        width: 100%;
-        height: 60px;
-        display: flex;
-        justify-content: center;
-        align-items: center;
-        background: linear-gradient(to bottom, rgba(0, 0, 0, 0), rgba(0, 0, 0, 0.5));
-        z-index: 10;
-        opacity: 0;
-        transition: opacity 0.3s ease;
-    }
-    
-    .app-switcher.swiping {
-        opacity: 1;
-    }
-    
-    .app-switcher-items {
-        display: flex;
-        gap: 30px;
-        height: 100%;
-        align-items: center;
-    }
-    
-    .app-switcher-item {
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        transition: transform 0.3s ease, opacity 0.3s ease;
-        opacity: 0.5;
-    }
-    
-    .app-switcher-item.active {
-        opacity: 1;
-        transform: scale(1.2);
-    }
-    
-    .app-switcher-item.target {
-        opacity: 0.8;
-        transform: scale(1.1);
-    }
-    
-    .app-switcher-label {
-        font-family: 'Chivo Mono', monospace;
-        font-size: 0.8rem;
-        margin-top: 5px;
-        display: block;
-    }
-    
-    .page-indicator {
-        width: 50px;
-        height: 4px;
-        background: white;
-        border-radius: 2px;
-    }
-    
-    /* Scale the current page when swiping */
     .swiping-active .full {
         transition: transform 0.3s ease;
-        transform: scale(0.85) translateZ(0);
     }
 
     .mobile-logo {
         position: fixed;
         top: 15px;
-        left: 15px;
+        right: 15px;
         width: 28px;
         height: 28px;
-        z-index: 0;
+        z-index: 1002;
         opacity: 0;
         transition: opacity 0.3s ease;
         filter: drop-shadow(0 0 5px rgba(0, 0, 0, 0.5));
@@ -700,6 +843,175 @@
     
     .mobile-logo.swiping {
         opacity: 0.7;
+    }
+    
+    .mobile-logo.carousel {
+        opacity: 0.9;
+    }
+    
+    /* Carousel mode styles - redesigned to match app switcher */
+    .carousel-mode-logo {
+        position: fixed;
+        top: 15px;
+        right: 15px;
+        width: 28px;
+        height: 28px;
+        z-index: 1002;
+        opacity: 0;
+        transition: opacity 0.3s ease;
+        filter: drop-shadow(0 0 5px rgba(0, 0, 0, 0.5));
+    }
+    
+    .carousel-mode-logo.visible {
+        opacity: 0.9;
+    }
+    
+    .carousel-mode-indicator {
+        position: fixed;
+        top: 20px;
+        left: 20px;
+        background: rgba(0, 0, 0, 0.8);
+        color: white;
+        padding: 6px 12px;
+        border-radius: 15px;
+        font-family: 'Chivo Mono', monospace;
+        font-size: 0.7rem;
+        z-index: 1000;
+        opacity: 0;
+        transition: opacity 0.3s ease;
+        backdrop-filter: blur(10px);
+    }
+    
+    .carousel-mode-indicator.visible {
+        opacity: 1;
+    }
+    
+    .page-switcher {
+        position: fixed;
+        left: 0;
+        bottom: 0;
+        width: 100%;
+        height: 80px;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        background: linear-gradient(to bottom, rgba(0, 0, 0, 0), rgba(0, 0, 0, 0.7));
+        z-index: 1001;
+        opacity: 0;
+        transition: opacity 0.3s ease;
+        backdrop-filter: blur(10px);
+    }
+    
+    .page-switcher.visible {
+        opacity: 1;
+    }
+    
+    .page-items {
+        display: flex;
+        gap: 25px;
+        height: 100%;
+        align-items: center;
+        padding: 10px 0;
+    }
+    
+    .page-item {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        transition: transform 0.3s ease, opacity 0.3s ease;
+        opacity: 0.6;
+        cursor: pointer;
+        padding: 5px;
+        border-radius: 10px;
+        background: rgba(255, 255, 255, 0.1);
+        min-width: 60px;
+    }
+    
+    .page-item.active {
+        opacity: 1;
+        transform: scale(1.15);
+        background: rgba(255, 255, 255, 0.2);
+        box-shadow: 0 0 10px rgba(255, 255, 255, 0.3);
+    }
+    
+    .page-item:hover {
+        opacity: 0.8;
+        transform: scale(1.05);
+    }
+    
+    .page-icon {
+        width: 40px;
+        height: 6px;
+        background: white;
+        border-radius: 3px;
+        margin-bottom: 8px;
+        transition: all 0.3s ease;
+    }
+    
+    .page-item.active .page-icon {
+        background: var(--accent-color, white);
+        box-shadow: 0 0 8px rgba(255, 255, 255, 0.5);
+    }
+    
+    .page-label {
+        font-family: 'Chivo Mono', monospace;
+        font-size: 0.7rem;
+        color: white;
+        text-align: center;
+        font-weight: 500;
+        text-shadow: 0 0 3px rgba(0, 0, 0, 0.8);
+    }
+    
+    .carousel-mode .full {
+        transform: scale(0.85) translateZ(0);
+        border-radius: 15px;
+        overflow: hidden;
+        box-shadow: 0 0 20px rgba(0, 0, 0, 0.5);
+    }
+    
+    /* Carousel tap zones - less prominent now */
+    .carousel-tap-zones {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        display: flex;
+        z-index: 1001;
+        opacity: 0;
+        transition: opacity 0.3s ease;
+        pointer-events: none;
+    }
+    
+    .carousel-tap-zones.visible {
+        opacity: 0.3;
+    }
+    
+    .tap-zone {
+        flex: 1;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: rgba(255, 255, 255, 0.05);
+        border: 1px dashed rgba(255, 255, 255, 0.2);
+        margin: 20px;
+        border-radius: 10px;
+        font-size: 1rem;
+        color: white;
+        text-shadow: 0 0 10px rgba(0, 0, 0, 0.8);
+        backdrop-filter: blur(2px);
+    }
+    
+    .tap-zone.left::before {
+        content: "←";
+    }
+    
+    .tap-zone.center::before {
+        content: "✕";
+    }
+    
+    .tap-zone.right::before {
+        content: "→";
     }
 </style>
 
@@ -731,14 +1043,41 @@
     </div>
 </div>
 
-<div class="carousel {isHeaderVisible ? 'header-visible' : ''} {isSwiping ? 'swiping-active' : ''}" 
+<div class="carousel {isHeaderVisible ? 'header-visible' : ''} {isSwiping ? 'swiping-active' : ''} {isCarouselMode ? 'carousel-mode' : ''}" 
     on:touchstart={handleTouchStart} 
     on:touchmove={handleTouchMove}
     on:touchend={handleTouchEnd}>
     
     {#if isMobile}
-        <img src="/favicon.png" alt="akh logo" class="mobile-logo {isSwiping ? 'swiping' : ''}" />
+        <img src="/favicon.png" alt="akh logo" class="mobile-logo {isSwiping ? 'swiping' : ''} {isCarouselMode ? 'carousel' : ''}" />
     {/if}
+    
+    <!-- Carousel mode indicator (top left, only in carousel mode) -->
+    <div class="carousel-mode-indicator {isCarouselMode ? 'visible' : ''}">
+        Carousel Mode
+    </div>
+    
+    <!-- Carousel tap zones -->
+    <div class="carousel-tap-zones {isCarouselMode ? 'visible' : ''}">
+        <div class="tap-zone left"></div>
+        <div class="tap-zone center"></div>
+        <div class="tap-zone right">        </div>
+    </div>
+    
+    <!-- Page switcher (bottom) - visible during both swiping and carousel mode -->
+    <div class="page-switcher {isSwiping || isCarouselMode ? 'visible' : ''}">
+        <div class="page-items">
+            {#each pageNames as name, i}
+                <div class="page-item {i === currentPageIndex ? 'active' : ''}" 
+                     on:click={() => isCarouselMode ? handleCarouselPageSelect(i) : setPage(i)}
+                     role="button"
+                     tabindex="0">
+                    <div class="page-icon"></div>
+                    <div class="page-label">{name}</div>
+                </div>
+            {/each}
+        </div>
+    </div>
     
     <div class="carousel-content">
         {#key currentPageIndex}
@@ -755,31 +1094,18 @@
                     opacity: 0,
                     easing: cubicOut
                 }}
-                style="will-change: transform, opacity; transform: scale({isSwiping ? 0.85 : 1}) translateZ(0) translateX({isSwiping ? swipeProgress * 100 : 0}px);">
+                style="will-change: transform, opacity; transform: scale({isSwiping || isCarouselMode ? 0.85 : 1}) translateZ(0) translateX({isSwiping ? swipeProgress * 100 : 0}px);">
                 <svelte:component this={pages[currentPageIndex]} />
             </div>
         {/key}
     </div>
     
-    {#if isMobile && isFirstVisit}
+    {#if isMobile && isFirstVisit && !isCarouselMode}
         <div class="swipe-indicator left" data-hint="Previous">
             <div class="arrow"></div>
         </div>
         <div class="swipe-indicator right" data-hint="Next">
             <div class="arrow"></div>
-        </div>
-    {/if}
-    
-    {#if isMobile}
-        <div class="app-switcher {isSwiping ? 'swiping' : ''}">
-            <div class="app-switcher-items">
-                {#each pageNames as name, i}
-                    <div class="app-switcher-item {i === currentPageIndex ? 'active' : ''} {i === swipeTarget && isSwiping ? 'target' : ''}">
-                        <div class="page-indicator"></div>
-                        <div class="app-switcher-label">{name}</div>
-                    </div>
-                {/each}
-            </div>
         </div>
     {/if}
 </div>

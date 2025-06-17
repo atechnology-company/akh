@@ -140,12 +140,12 @@
         };
 
         // Calculate additional prayer times for presentation
-        const midnight = calculateMidnight(prayerTimes.isha, prayerTimes.fajr);
         const firstThird = calculateFirstThird(prayerTimes.isha, prayerTimes.fajr);
         const lastThird = calculateLastThird(prayerTimes.isha, prayerTimes.fajr);
 
         // Add these to a complete prayer times object for status calculation
-        // Note: We don't add this to the main prayerTimes object to avoid modifying it
+        // Note: We use the Adhan library's midnight calculation (prayerTimes.midnight)
+        // which is the midpoint between Maghrib and Fajr
         const allPrayerTimes = {
             ...prayerTimes,
             'first-third' : firstThird,   // First third of the night
@@ -221,7 +221,7 @@
         } else if (nextPrayer === 'tahajjud') {
             nextPrayerTime = timeToMinutes(calculateLastThird(prayerTimes.isha, prayerTimes.fajr));
         } else if (nextPrayer === 'midnight') {
-            nextPrayerTime = timeToMinutes(calculateMidnight(prayerTimes.isha, prayerTimes.fajr));
+            nextPrayerTime = timeToMinutes(prayerTimes.midnight);
         } else {
             // For standard prayer times, access from prayerTimes object
             const prayerTimeStr = prayerTimes[nextPrayer as keyof PrayerTimes];
@@ -252,6 +252,11 @@
         }, 60000);
         
         document.documentElement.style.setProperty('--passed-count', passedPrayers.length.toString());
+    }
+
+    // Reactive statement to update colors when prayer times store changes
+    $: if ($prayerTimesStore && typeof updateColorsBasedOnPrayerTimes === 'function') {
+        updateColorsBasedOnPrayerTimes($prayerTimesStore);
     }
 
     function checkMobile() {
@@ -516,6 +521,11 @@
                 prayerTimes = { ...prayerTimes };
             }
             
+            // Force color update after refresh
+            if ($prayerTimesStore && typeof updateColorsBasedOnPrayerTimes === 'function') {
+                updateColorsBasedOnPrayerTimes($prayerTimesStore);
+            }
+            
             // Show success toast
             if (browser) {
                 try {
@@ -561,6 +571,13 @@
     // Handle settings save
     function handleSettingsSave() {
         updatePrayerTimes();
+        
+        // Force color update after settings save
+        setTimeout(() => {
+            if ($prayerTimesStore && typeof updateColorsBasedOnPrayerTimes === 'function') {
+                updateColorsBasedOnPrayerTimes($prayerTimesStore);
+            }
+        }, 100);
     }
 
     async function initializePrayerTimesData() {
@@ -610,6 +627,13 @@
                 }, 60000); // Update every minute
                 
                 isLoading = false;
+                
+                // Force additional color update after initialization
+                setTimeout(() => {
+                    if ($prayerTimesStore && typeof updateColorsBasedOnPrayerTimes === 'function') {
+                        updateColorsBasedOnPrayerTimes($prayerTimesStore);
+                    }
+                }, 100);
                 
                 // Trigger fade-in sequence for initial load
                 if (isInitialLoad) {
@@ -671,8 +695,13 @@
             localStorage.setItem('salahComponentVisited', 'true');
         }
         
-        // Update prayer status
+        // Update prayer status and colors
         updatePrayerStatus();
+        
+        // Force color update on mount
+        if ($prayerTimesStore && typeof updateColorsBasedOnPrayerTimes === 'function') {
+            updateColorsBasedOnPrayerTimes($prayerTimesStore);
+        }
         
         window.addEventListener('wheel', handleScroll);
         window.addEventListener('resize', checkMobile);
@@ -848,11 +877,11 @@
                                 {#if isMobile}
                                     <p class="prayer-name">{t('prayer_names.midnight')}</p>
                                     <div class="time-display">
-                                        <p class="time">{calculateMidnight(prayerTimes.isha, prayerTimes.fajr)}</p>
+                                        <p class="time">{prayerTimes.midnight}</p>
                                     </div>
                                 {:else}
                                     <div class="time-display">
-                                        <p class="time">{calculateMidnight(prayerTimes.isha, prayerTimes.fajr)}</p>
+                                        <p class="time">{prayerTimes.midnight}</p>
                                     </div>
                                     <p class="prayer-name">{t('prayer_names.midnight')}</p>
                                 {/if}
@@ -942,11 +971,11 @@
                                 {#if isMobile}
                                     <p class="prayer-name">{t('prayer_names.midnight')}</p>
                                     <div class="time-display">
-                                        <p class="time">{calculateMidnight(prayerTimes.isha, prayerTimes.fajr)}</p>
+                                        <p class="time">{prayerTimes.midnight}</p>
                                     </div>
                                 {:else}
                                     <div class="time-display">
-                                        <p class="time">{calculateMidnight(prayerTimes.isha, prayerTimes.fajr)}</p>
+                                        <p class="time">{prayerTimes.midnight}</p>
                                     </div>
                                     <p class="prayer-name">{t('prayer_names.midnight')}</p>
                                 {/if}
@@ -1107,7 +1136,7 @@
                             <div class="prayer-list-info">
                                 <p class="prayer-name">{t('prayer_names.midnight')}</p>
                                 <div class="time-display">
-                                    <p class="time">{calculateMidnight(prayerTimes.isha, prayerTimes.fajr)}</p>
+                                    <p class="time">{prayerTimes.midnight}</p>
                                 </div>
                             </div>
                         </div>

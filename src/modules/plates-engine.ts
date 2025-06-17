@@ -9,8 +9,8 @@ import type {
 const config: Config = {
     GOOGLE_API_KEY: import.meta.env.VITE_GOOGLE_API_KEY || '',
     SEARCH_ENGINE_ID: import.meta.env.VITE_SEARCH_ENGINE_ID || '',
-    GEMINI_API_KEY: import.meta.env.VITE_GEMINI_API_KEY || localStorage.getItem('gemini_api_key') || '',
-    GEMINI_API_URL: 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent',
+    GEMINI_API_KEY: import.meta.env.VITE_GEMINI_API_KEY || (typeof window !== 'undefined' ? localStorage.getItem('gemini_api_key') : null) || '',
+    GEMINI_API_URL: 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent',
     IS_DEV: import.meta.env.DEV
 };
 
