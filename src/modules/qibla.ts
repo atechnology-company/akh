@@ -23,18 +23,12 @@ export const calculateQiblaDirection = (latitude: number, longitude: number): nu
   const lat2 = toRadians(KAABA_LAT);
   const lng2 = toRadians(KAABA_LNG);
   
-  // Calculate the difference in longitude
-  const dLng = lng2 - lng1;
+  // Calculate qibla direction using spherical trigonometry
+  const y = Math.sin(lng2 - lng1);
+  const x = Math.cos(lat1) * Math.tan(lat2) - Math.sin(lat1) * Math.cos(lng2 - lng1);
   
-  // Calculate qibla direction using the correct spherical trigonometry formula
-  // This is the forward azimuth from point 1 to point 2
-  const y = Math.sin(dLng) * Math.cos(lat2);
-  const x = Math.cos(lat1) * Math.sin(lat2) - Math.sin(lat1) * Math.cos(lat2) * Math.cos(dLng);
-  
-  // Get angle in radians, then convert to degrees
+  // Get angle in degrees and normalize to 0-360
   let qibla = toDegrees(Math.atan2(y, x));
-  
-  // Normalize to 0-360 range (bearing from North clockwise)
   qibla = (qibla + 360) % 360;
   
   return qibla;

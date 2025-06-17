@@ -1,13 +1,8 @@
 <script lang="ts">
-  // i bet you dont have a schizo multilingual copilot
   import { onMount } from 'svelte';
   import { calculateQiblaDirection } from '../modules/qibla';
   import { t } from '$lib/i18n';
   import { accentColor, gradientColor } from '$lib/stores/accentColor';
-  import * as geomagnetism from 'geomagnetism';
-  
-  // Get Leaflet instance
-  const L = () => (window as any).L;
   
   let leafletDeviceDirectionLine: any = null;
   
@@ -19,16 +14,6 @@
   
   let currentHeading: number = 0;
   let isCalibrating: boolean = false;
-  
-  // Smoothing variables for compass
-  let smoothedHeading: number = 0;
-  let headingHistory: number[] = [];
-  const SMOOTHING_FACTOR = 0.7; // Higher = more smoothing (0-1)
-  const HISTORY_SIZE = 5;
-  
-  // Throttling variables
-  let lastOrientationUpdate = 0;
-  const ORIENTATION_THROTTLE = 100; // ms between updates
 
   let leafletMap: any = null;
   
@@ -61,64 +46,7 @@
     console.log('NativeScript modules not available, using standard web APIs');
   }
   
-  // Helper function to smooth compass readings
-  function smoothHeading(newHeading: number): number {
-    // Handle the circular nature of compass readings (0° = 360°)
-    if (headingHistory.length > 0) {
-      const lastHeading = headingHistory[headingHistory.length - 1];
-      let diff = newHeading - lastHeading;
-      
-      // Adjust for circular nature (crossing 0°/360°)
-      if (diff > 180) {
-        newHeading -= 360;
-      } else if (diff < -180) {
-        newHeading += 360;
-      }
-    }
-    
-    // Add to history
-    headingHistory.push(newHeading);
-    if (headingHistory.length > HISTORY_SIZE) {
-      headingHistory.shift();
-    }
-    
-    // Calculate smoothed value using exponential moving average
-    if (smoothedHeading === 0) {
-      smoothedHeading = newHeading;
-    } else {
-      smoothedHeading = SMOOTHING_FACTOR * smoothedHeading + (1 - SMOOTHING_FACTOR) * newHeading;
-    }
-    
-    // Normalize back to 0-360 range
-    smoothedHeading = (smoothedHeading + 360) % 360;
-    
-    return smoothedHeading;
-  }
-  
-  // Helper function to get magnetic declination using geomagnetism package
-  function getMagneticDeclination(lat: number, lng: number): number {
-    try {
-      // Use the geomagnetism package for accurate magnetic declination
-      const model = geomagnetism.model();
-      const info = model.point([lat, lng]);
-      
-      // Return the declination in degrees
-      return info.decl;
-    } catch (error) {
-      console.warn('Failed to calculate magnetic declination:', error);
-      
-      // Fallback to simplified calculation if geomagnetism fails
-      if (lat > 60) return -15; // Northern regions
-      if (lat < -60) return 15; // Southern regions
-      if (lng > 100 && lng < 140 && lat > 20 && lat < 50) return -7; // East Asia
-      if (lng > -130 && lng < -60 && lat > 25 && lat < 50) return -15; // North America
-      if (lng > -10 && lng < 40 && lat > 35 && lat < 70) return 2; // Europe
-      
-      return 0; // Default to no declination
-    }
-  }
-
-  // Helper function to format distance for display
+  // Helper function to format accuracy for display
   function formatAccuracy(meters: number): string {
     if (meters >= 1000) {
       return `${(meters / 1000).toFixed(1)} km`;
@@ -137,10 +65,7 @@
   function calculateCompassAccuracy(): number {
     if (qiblaDirection === 0 || currentHeading === 0) return 0;
     
-    // Use smoothed heading for accuracy calculation
-    const heading = smoothedHeading || currentHeading;
-    let diff = Math.abs(heading - qiblaDirection);
-    
+    let diff = Math.abs(currentHeading - qiblaDirection);
     // Handle circular nature of compass (0° = 360°)
     if (diff > 180) {
       diff = 360 - diff;
@@ -150,34 +75,6 @@
     if (diff <= 5) return 1;
     if (diff >= 90) return 0;
     return 1 - ((diff - 5) / 85);
-  }
-  
-  // Function to validate compass reading against known good reference
-  function validateCompassReading(): { isValid: boolean; message: string } {
-    if (!userLocation || qiblaDirection === 0) {
-      return { isValid: false, message: "Location or qibla direction not available" };
-    }
-    
-    const heading = smoothedHeading || currentHeading;
-    if (heading === 0) {
-      return { isValid: false, message: "No compass reading available" };
-    }
-    
-    // Check if compass is within reasonable range of qibla direction
-    let diff = Math.abs(heading - qiblaDirection);
-    if (diff > 180) {
-      diff = 360 - diff;
-    }
-    
-    if (diff <= 15) {
-      return { isValid: true, message: "Compass aligned with qibla" };
-    } else if (diff <= 45) {
-      return { isValid: true, message: "Compass roughly aligned" };
-    } else if (diff >= 150) {
-      return { isValid: false, message: "Compass showing opposite direction - may need calibration" };
-    } else {
-      return { isValid: false, message: "Compass may need calibration" };
-    }
   }
   
   onMount(() => {
@@ -209,11 +106,6 @@
       window.removeEventListener('deviceorientation', 
         event => handleOrientation(event as unknown as DeviceOrientationEvent), 
         true);
-        
-      // Clear compass readings
-      currentHeading = 0;
-      smoothedHeading = 0;
-      headingHistory = [];
     };
   });
   
@@ -492,10 +384,6 @@
   function calibrateCompass() {
     isCalibrating = true;
     
-    // Reset smoothing variables for fresh calibration
-    smoothedHeading = 0;
-    headingHistory = [];
-    
     // Если используем NativeScript, обновляем местоположение для получения свежего направления
     if (isUsingNativeDirection && nativescriptGeolocation) {
       nativescriptGeolocation.enableLocationRequest()
@@ -514,11 +402,11 @@
           (DeviceOrientationEvent as any).requestPermission()
             .then((response: string) => {
               if (response === 'granted') {
-                console.log('Orientation permission granted for calibration');
-                // Переподключаем слушатели событий с новой настройкой
+                console.log('Orientation permission granted');
+                // Переподключаем слушатели событий
                 setupOrientationListeners();
               } else {
-                console.warn('Orientation permission not granted for calibration');
+                console.warn('Orientation permission not granted');
               }
             })
             .catch(console.error);
@@ -531,7 +419,7 @@
     // Показываем инструкции по калибровке
     setTimeout(() => {
       isCalibrating = false;
-    }, 15000); // Даем 15 секунд на калибровку
+    }, 10000); // Даем 10 секунд на калибровку
   }
   
   function handleLocationError(error: GeolocationPositionError) {
@@ -554,46 +442,15 @@
   }
   
   function handleOrientation(event: DeviceOrientationEvent) {
-    // Throttle orientation updates for better performance
-    const now = Date.now();
-    if (now - lastOrientationUpdate < ORIENTATION_THROTTLE) {
-      return;
-    }
-    lastOrientationUpdate = now;
-    
     // Get compass heading from device
     if (event.alpha !== null) {
-      let rawHeading = event.alpha;
-      
-      // Apply magnetic declination correction if we have user location
-      if (userLocation) {
-        const magneticDeclination = getMagneticDeclination(userLocation.lat, userLocation.lng);
-        rawHeading = (rawHeading + magneticDeclination + 360) % 360;
-      }
-      
-      // For iOS and some Android devices, we need to reverse the direction
-      // because they report the direction the device is pointing, not the magnetic north
-      if (window.DeviceOrientationEvent && typeof (window.DeviceOrientationEvent as any).webkitCompassHeading !== 'undefined') {
-        // iOS devices
-        rawHeading = (360 - rawHeading) % 360;
-      } else if (navigator.userAgent.includes('Chrome') && navigator.userAgent.includes('Mobile')) {
-        // Android Chrome might need correction depending on device
-        // For most Android devices, the alpha value is already correct
-        // but some might need reversal - this is device-specific
-      }
-      
-      // Apply smoothing to reduce erratic movement
-      currentHeading = smoothHeading(rawHeading);
-      
-      // Debug logging (remove in production)
-      if (userLocation) {
-        console.log(`Raw: ${rawHeading.toFixed(1)}°, Smoothed: ${currentHeading.toFixed(1)}°, Qibla: ${qiblaDirection.toFixed(1)}°, Diff: ${Math.abs(currentHeading - qiblaDirection).toFixed(1)}°`);
-      }
+      // Alpha is the compass direction the device is facing in degrees
+      currentHeading = event.alpha;
       
       // Calculate compass accuracy for UI feedback
       compassAccuracy = calculateCompassAccuracy();
       
-      // Update device direction line on map if we have location
+      // Обновляем линию направления на карте если есть местоположение
       if (userLocation) {
         updateDeviceDirectionLine();
       }
@@ -611,11 +468,8 @@
   function updateLeafletDeviceDirectionLine() {
     if (!leafletMap || !userLocation || currentHeading === 0) return;
     
-    // Use smoothed heading for display
-    const displayHeading = smoothedHeading || currentHeading;
-    
     // Calculate endpoint for the direction line
-    const headingRad = (displayHeading * Math.PI) / 180;
+    const headingRad = (currentHeading * Math.PI) / 180;
     
     // Clear previous line
     if (leafletDeviceDirectionLine) {
@@ -650,7 +504,7 @@
     const compassColor = `rgb(${red}, ${green}, 0)`;
     
     // Draw compass direction line with accuracy-based color
-    leafletDeviceDirectionLine = L().polyline([
+    leafletDeviceDirectionLine = L.polyline([
       userLatLng,
       endLatLng
     ], {
@@ -662,7 +516,7 @@
     
     // Add direction indicator at the end
     try {
-      const directionMarker = L().circleMarker(endLatLng, {
+      const directionMarker = L.circleMarker(endLatLng, {
         radius: 6,
         fillColor: compassColor,
         color: '#FFFFFF',
@@ -670,15 +524,6 @@
         opacity: 1,
         fillOpacity: 1
       }).addTo(leafletMap);
-      
-      // Add compass heading text for debugging
-      const headingText = L().tooltip({
-        permanent: true,
-        direction: 'top',
-        className: 'compass-tooltip'
-      }).setContent(`${Math.round(displayHeading)}°`);
-      
-      directionMarker.bindTooltip(headingText);
     } catch (e) {
       console.warn('Failed to add direction marker to Leaflet map', e);
     }
@@ -693,18 +538,13 @@
           (DeviceOrientationEvent as any).requestPermission()
             .then((response: string) => {
               if (response === 'granted') {
-                // Use deviceorientationabsolute for iOS when available (more accurate)
-                if ('ondeviceorientationabsolute' in window) {
-                  (window as any).addEventListener('deviceorientationabsolute', 
-                    (event: DeviceOrientationEvent) => handleOrientation(event), 
-                    true);
-                  console.log('iOS using deviceorientationabsolute events');
-                } else {
-                  (window as any).addEventListener('deviceorientation', 
-                    (event: DeviceOrientationEvent) => handleOrientation(event), 
-                    true);
-                  console.log('iOS using deviceorientation events');
-                }
+                window.addEventListener('deviceorientation', 
+                  event => handleOrientation(event as unknown as DeviceOrientationEvent), 
+                  true);
+                window.addEventListener('deviceorientationabsolute', 
+                  event => handleOrientation(event as unknown as DeviceOrientationEvent), 
+                  true);
+                console.log('iOS orientation permission granted');
               } else {
                 console.warn('iOS orientation permission not granted');
               }
@@ -712,35 +552,27 @@
             .catch(console.error);
         } catch (e) {
           // Regular browsers don't need permission
-          setupStandardOrientationListeners();
+          window.addEventListener('deviceorientation', 
+            event => handleOrientation(event as unknown as DeviceOrientationEvent), 
+            true);
+          window.addEventListener('deviceorientationabsolute', 
+            event => handleOrientation(event as unknown as DeviceOrientationEvent), 
+            true);
+          console.log('Using deviceorientation events');
         }
       } else {
         // Regular browsers don't need permission
-        setupStandardOrientationListeners();
+        window.addEventListener('deviceorientation', 
+          event => handleOrientation(event as unknown as DeviceOrientationEvent), 
+          true);
+        window.addEventListener('deviceorientationabsolute', 
+          event => handleOrientation(event as unknown as DeviceOrientationEvent), 
+          true);
+        console.log('Using deviceorientation events');
       }
     } else {
       console.warn('Device orientation not supported by this browser');
     }
-  }
-  
-  function setupStandardOrientationListeners() {
-    // Prefer absolute orientation when available (more accurate for compass)
-    if ('ondeviceorientationabsolute' in window) {
-      (window as any).addEventListener('deviceorientationabsolute', 
-        (event: DeviceOrientationEvent) => handleOrientation(event), 
-        true);
-      console.log('Using deviceorientationabsolute events');
-    } else {
-      (window as any).addEventListener('deviceorientation', 
-        (event: DeviceOrientationEvent) => handleOrientation(event), 
-        true);
-      console.log('Using deviceorientation events');
-    }
-    
-    // Also listen for regular deviceorientation as fallback
-    (window as any).addEventListener('deviceorientation', 
-      (event: DeviceOrientationEvent) => handleOrientation(event), 
-      true);
   }
   
   // Track if this is the first location update for auto-zoom
@@ -779,7 +611,7 @@
     
     // Clear existing markers and lines
     leafletMap.eachLayer((layer: any) => {
-      if (layer instanceof L().Marker || layer instanceof L().Polyline || (layer as any).options && ((layer as any).options.radius !== undefined)) {
+      if (layer instanceof L.Marker || layer instanceof L.Polyline || (layer as any).options && ((layer as any).options.radius !== undefined)) {
         leafletMap.removeLayer(layer);
       }
     });
@@ -820,7 +652,7 @@
     const qiblaEndLng = lon2 * 180 / Math.PI;
     
     // Draw main qibla line with accent color
-    const qiblaPolyline = L().polyline([
+    const qiblaPolyline = L.polyline([
       userLatLng,
       [qiblaEndLat, qiblaEndLng]
     ], {
@@ -910,12 +742,12 @@
   function initializeLeafletMap(mapElement: HTMLElement) {
     try {
       // Create Leaflet map with disabled zoom controls
-      leafletMap = L().map(mapElement, {
+      leafletMap = L.map(mapElement, {
         zoomControl: false // Remove zoom buttons
       }).setView([21.4225, 39.8262], 3);
       
       // Add OpenStreetMap tile layer with a warm-colored style that fits the app's theme
-      L().tileLayer('https://{s}.tile.openstreetmap.fr/hot/{z}/{x}/{y}.png', {
+      L.tileLayer('https://{s}.tile.openstreetmap.fr/hot/{z}/{x}/{y}.png', {
         attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
         maxZoom: 19
       }).addTo(leafletMap);
@@ -942,104 +774,175 @@
   }
 </script>
 
-<div class="relative w-full h-screen font-['Onest'] bg-[#fff8e7] text-black overflow-hidden max-w-none">
-  <div id="map" class="absolute inset-0 w-full h-full z-[1]"></div>
-  
-  <!-- Compass accuracy and controls overlay -->
-  {#if userLocation && !isLoading && !errorMessage}
-    <div class="absolute top-5 right-5 bg-white/95 backdrop-blur-[10px] rounded-xl p-3 shadow-[0_4px_16px_rgba(0,0,0,0.1)] border border-white/20 z-[100] text-xs max-w-[200px]">
-      <div class="mb-2">
-        <div class="mb-1 whitespace-nowrap">📍 {accuracyText}</div>
-        <div class="mb-1 whitespace-nowrap">
-          🧭 Compass: 
-          <span class="font-bold" class:text-green-500={compassAccuracy > 0.7} class:text-amber-500={compassAccuracy > 0.3 && compassAccuracy <= 0.7} class:text-red-500={compassAccuracy <= 0.3}>
-            {Math.round(compassAccuracy * 100)}%
-          </span>
-        </div>
-        <div class="mb-1 whitespace-nowrap">Heading: {Math.round(smoothedHeading || currentHeading)}°</div>
-        <div class="mb-1 whitespace-nowrap">Qibla: {Math.round(qiblaDirection)}°</div>
-        {#if currentHeading > 0}
-          {@const validation = validateCompassReading()}
-          <div class="text-xs font-semibold px-2 py-1 rounded mt-1" 
-               class:bg-green-100={validation.isValid} 
-               class:text-green-600={validation.isValid} 
-               class:border={validation.isValid} 
-               class:border-green-200={validation.isValid} 
-               class:bg-red-100={!validation.isValid} 
-               class:text-red-600={!validation.isValid} 
-               class:border-red-200={!validation.isValid}>
-            {validation.message}
-          </div>
-        {/if}
-      </div>
-      <button 
-        class="w-full px-3 py-2 bg-gradient-to-br from-[var(--accent-color)] to-[var(--accent-color)] text-white border-none rounded-md cursor-pointer text-xs font-semibold transition-all duration-300 shadow-[0_2px_8px_rgba(var(--accent-color-rgb,0,114,255),0.3)] hover:-translate-y-0.5 hover:shadow-[0_4px_12px_rgba(var(--accent-color-rgb,0,114,255),0.4)]"
-        on:click={calibrateCompass}
-      >
-        Calibrate Compass
-      </button>
-    </div>
-  {/if}
+<div class="qibla-container">
+  <div id="map"></div>
   
   {#if isLoading}
-    <div class="absolute inset-0 w-full h-full flex flex-col justify-center items-center bg-gradient-to-br from-black/95 to-black/90 backdrop-blur-[10px] text-white z-[1000]">
-      <div class="w-[50px] h-[50px] border-[5px] border-white/20 border-t-[var(--accent-color)] rounded-full animate-spin mb-5"></div>
+    <div class="loading">
+      <div class="spinner"></div>
       <p>{t('qibla_finding')}</p>
     </div>
   {:else if errorMessage}
-    <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-gradient-to-br from-[#fff8e7]/95 to-[#fff8e7]/90 backdrop-blur-[10px] rounded-2xl shadow-[0_8px_32px_rgba(0,0,0,0.15)] border border-white/20 p-6 text-center z-[1000] max-w-[320px]">
+    <div class="error">
       <p>{errorMessage}</p>
-      <button 
-        class="mt-5 px-6 py-3 bg-gradient-to-br from-[var(--accent-color)] to-[var(--accent-color)] text-white border-none rounded-lg cursor-pointer text-base font-semibold transition-all duration-300 shadow-[0_4px_16px_rgba(var(--accent-color-rgb,0,114,255),0.3)] bg-[length:200%_100%] bg-[position:0%_center] hover:-translate-y-0.5 hover:shadow-[0_6px_20px_rgba(var(--accent-color-rgb,0,114,255),0.4)]"
-        on:click={startQiblaFinder}
-      >
+      <button on:click={startQiblaFinder}>
         {t('retry')}
       </button>
     </div>
   {/if}
   
   {#if isCalibrating}
-    <div class="fixed inset-0 bg-black/80 z-[1000] flex justify-center items-center">
-      <div class="bg-gradient-to-br from-white/95 to-white/90 backdrop-blur-[10px] p-6 rounded-2xl text-center max-w-[90%] max-h-[80vh] overflow-y-auto border border-white/20 shadow-[0_8px_32px_rgba(0,0,0,0.2)]">
-        <h3 class="mb-4 text-[var(--accent-color)]">📱 Calibrate Your Compass</h3>
-        <div class="w-[100px] h-[50px] mx-auto my-5 relative before:content-[''] before:absolute before:w-[50px] before:h-[50px] before:rounded-full before:border-[3px] before:border-[var(--accent-color)] before:box-border before:left-0 after:content-[''] after:absolute after:w-[50px] after:h-[50px] after:rounded-full after:border-[3px] after:border-[var(--accent-color)] after:box-border after:right-0"></div>
-        <p><strong>To improve accuracy:</strong></p>
-        <ol class="text-left my-4 pl-5">
-          <li class="mb-2 leading-[1.4]">Hold your device flat (parallel to ground)</li>
-          <li class="mb-2 leading-[1.4]">Move in a figure-8 pattern 3-4 times</li>
-          <li class="mb-2 leading-[1.4]">Rotate slowly 360° horizontally</li>
-          <li class="mb-2 leading-[1.4]">Keep away from metal objects</li>
-        </ol>
-        <p><em>This helps calibrate the magnetic sensor for better qibla direction.</em></p>
-        <button 
-          class="mt-5 px-6 py-3 bg-gradient-to-br from-[var(--accent-color)] to-[var(--accent-color)] text-white border-none rounded-lg cursor-pointer text-base font-semibold transition-all duration-300 shadow-[0_4px_16px_rgba(var(--accent-color-rgb,0,114,255),0.3)]"
-          on:click={() => isCalibrating = false}
-        >
-          Done
-        </button>
+    <div class="calibration-overlay">
+      <div class="calibration-content">
+        <h3>{t('qibla_permission')}</h3>
+        <div class="figure-eight"></div>
+        <p>{t('qibla_north')}</p>
+        <button on:click={() => isCalibrating = false}>OK</button>
       </div>
     </div>
   {/if}
 </div>
 
 <style>
+  .qibla-container {
+    position: relative;
+    width: 100%;
+    height: 100vh;
+    font-family: 'Onest', sans-serif;
+    background: #fff8e7;
+    color: #000;
+    overflow: hidden;
+    max-width: none;
+  }
+  
+  #map {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 1;
+  }
+  
+  .loading {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    background: linear-gradient(135deg, rgba(0, 0, 0, 0.95), rgba(0, 0, 0, 0.9));
+    backdrop-filter: blur(10px);
+    color: #ffffff;
+    z-index: 1000;
+  }
+  
+  .spinner {
+    width: 50px;
+    height: 50px;
+    border: 5px solid rgba(255, 255, 255, 0.2);
+    border-top-color: var(--accent-color);
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+    margin-bottom: 20px;
+  }
+  
+  @keyframes spin {
+    to { transform: rotate(360deg); }
+  }
+  
+  .error {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: linear-gradient(135deg, rgba(255, 248, 231, 0.95), rgba(255, 248, 231, 0.9));
+    backdrop-filter: blur(10px);
+    border-radius: 16px;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.15);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    padding: 24px;
+    text-align: center;
+    z-index: 1000;
+    max-width: 320px;
+  }
+  
+  .error button {
+    margin-top: 20px;
+    padding: 12px 24px;
+    background: var(--gradient-color, linear-gradient(135deg, var(--accent-color), var(--accent-color)));
+    color: white;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 16px;
+    font-weight: 600;
+    transition: all 0.3s ease;
+    box-shadow: 0 4px 16px rgba(var(--accent-color-rgb, 0, 114, 255), 0.3);
+    background-size: 200% 100%;
+    background-position: 0% center;
+  }
+  
+  .error button:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px rgba(var(--accent-color-rgb, 0, 114, 255), 0.4);
+  }
+  
+  .calibration-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: rgba(0, 0, 0, 0.8);
+    z-index: 1000;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+  }
+  
+  .calibration-content {
+    background: linear-gradient(135deg, rgba(255, 255, 255, 0.95), rgba(255, 255, 255, 0.9));
+    backdrop-filter: blur(10px);
+    padding: 24px;
+    border-radius: 16px;
+    text-align: center;
+    max-width: 80%;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+  }
+  
+  .figure-eight {
+    width: 100px;
+    height: 50px;
+    margin: 20px auto;
+    position: relative;
+  }
+  
+  .figure-eight::before,
+  .figure-eight::after {
+    content: '';
+    position: absolute;
+    width: 50px;
+    height: 50px;
+    border-radius: 50%;
+    border: 3px solid var(--accent-color);
+    box-sizing: border-box;
+  }
+  
+  .figure-eight::before {
+    left: 0;
+  }
+  
+  .figure-eight::after {
+    right: 0;
+  }
+  
+  /* Ensure accent color variables are available */
   :global(:root) {
     --accent-color-rgb: 0, 114, 255;
-  }
-  
-  /* Compass tooltip styling */
-  :global(.compass-tooltip) {
-    background: rgba(0, 0, 0, 0.8) !important;
-    border: none !important;
-    border-radius: 4px !important;
-    color: white !important;
-    font-size: 12px !important;
-    font-weight: bold !important;
-    padding: 4px 8px !important;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3) !important;
-  }
-  
-  :global(.compass-tooltip::before) {
-    border-top-color: rgba(0, 0, 0, 0.8) !important;
   }
 </style>
