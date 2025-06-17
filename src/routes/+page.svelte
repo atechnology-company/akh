@@ -264,57 +264,25 @@
     };
     
     const handleTouchMove = (e: TouchEvent) => {
-        if (isMobile) {
+        if (isMobile && isCarouselMode) {
             const currentX = e.touches[0].clientX;
             const currentY = e.touches[0].clientY;
             const deltaX = currentX - touchStartX;
             const deltaY = currentY - touchStartY;
             
-            // In carousel mode, always allow swiping
-            if (isCarouselMode) {
-                const isHorizontalSwipe = Math.abs(deltaX) > Math.abs(deltaY) && Math.abs(deltaX) > 20;
-                
-                if (isHorizontalSwipe) {
-                    isSwiping = true;
-                    swipeProgress = Math.min(Math.max(deltaX / window.innerWidth, -0.5), 0.5);
-                    
-                    if (swipeProgress > 0.1) {
-                        swipeTarget = (currentPageIndex - 1 + pages.length) % pages.length;
-                    } else if (swipeProgress < -0.1) {
-                        swipeTarget = (currentPageIndex + 1) % pages.length;
-                    } else {
-                        swipeTarget = currentPageIndex;
-                    }
-                }
-                return;
-            }
-            
-            // Only trigger swipe animation for horizontal movement in normal mode
-            // Ignore vertical movements with a stricter threshold to prevent janky animations
             const isHorizontalSwipe = Math.abs(deltaX) > Math.abs(deltaY) && Math.abs(deltaX) > 20;
             
-            // Only set swiping state if it's a clear horizontal swipe
             if (isHorizontalSwipe) {
                 isSwiping = true;
-                
-                // Calculate swipe progress as percentage of screen width
                 swipeProgress = Math.min(Math.max(deltaX / window.innerWidth, -0.5), 0.5);
                 
-                // Determine swipe target based on direction
                 if (swipeProgress > 0.1) {
-                    // Swiping right (prev)
                     swipeTarget = (currentPageIndex - 1 + pages.length) % pages.length;
                 } else if (swipeProgress < -0.1) {
-                    // Swiping left (next)
                     swipeTarget = (currentPageIndex + 1) % pages.length;
                 } else {
                     swipeTarget = currentPageIndex;
                 }
-            } else {
-                // If it's a vertical swipe, reset animation progress
-                isSwiping = false;
-                swipeProgress = 0;
-                swipeTarget = currentPageIndex;
             }
         }
     };
@@ -335,18 +303,15 @@
                 return;
             }
             
-            // In carousel mode, use tap zones for quick navigation
-            const screenWidth = window.innerWidth;
-            const tapZoneWidth = screenWidth / 3; // Divide screen into 3 zones
-            
-            if (touchEndX < tapZoneWidth) {
-                // Left third - go to previous page
-                prevPage();
-            } else if (touchEndX > screenWidth - tapZoneWidth) {
-                // Right third - go to next page
-                nextPage();
+            // If this was a swipe, handle it
+            if (Math.abs(swipeDistance) > 50) {
+                if (swipeDistance > 0) {
+                    prevPage();
+                } else {
+                    nextPage();
+                }
             } else {
-                // Middle third - exit carousel mode
+                // If it was a tap (not a swipe), exit carousel mode and select current page
                 exitCarouselMode();
             }
             
@@ -355,15 +320,7 @@
             return;
         }
         
-        // Normal swipe handling
-        if (Math.abs(swipeDistance) > 50) { // minimum swipe distance
-            if (swipeDistance > 0) {
-                prevPage();
-            } else {
-                nextPage();
-            }
-        }
-        
+        // Reset swipe states for normal mode (no swiping in normal mode)
         if (isMobile) {
             isSwiping = false;
             swipeProgress = 0;
@@ -681,11 +638,6 @@
         z-index: 2;
     }
     
-    .carousel.carousel-mode {
-        transform: scale(0.8);
-        border: 2px solid rgba(255, 255, 255, 0.3);
-        box-shadow: 0 0 20px rgba(255, 255, 255, 0.2);
-    }
 
     .carousel.header-visible {
         margin-top: calc(1vh + 60px);
@@ -963,55 +915,10 @@
     }
     
     .carousel-mode .full {
-        transform: scale(0.85) translateZ(0);
+        transform: scale(0.8) translateZ(0);
         border-radius: 15px;
         overflow: hidden;
         box-shadow: 0 0 20px rgba(0, 0, 0, 0.5);
-    }
-    
-    /* Carousel tap zones - less prominent now */
-    .carousel-tap-zones {
-        position: absolute;
-        top: 0;
-        left: 0;
-        width: 100%;
-        height: 100%;
-        display: flex;
-        z-index: 1001;
-        opacity: 0;
-        transition: opacity 0.3s ease;
-        pointer-events: none;
-    }
-    
-    .carousel-tap-zones.visible {
-        opacity: 0.3;
-    }
-    
-    .tap-zone {
-        flex: 1;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        background: rgba(255, 255, 255, 0.05);
-        border: 1px dashed rgba(255, 255, 255, 0.2);
-        margin: 20px;
-        border-radius: 10px;
-        font-size: 1rem;
-        color: white;
-        text-shadow: 0 0 10px rgba(0, 0, 0, 0.8);
-        backdrop-filter: blur(2px);
-    }
-    
-    .tap-zone.left::before {
-        content: "←";
-    }
-    
-    .tap-zone.center::before {
-        content: "✕";
-    }
-    
-    .tap-zone.right::before {
-        content: "→";
     }
 </style>
 
@@ -1057,19 +964,12 @@
         Carousel Mode
     </div>
     
-    <!-- Carousel tap zones -->
-    <div class="carousel-tap-zones {isCarouselMode ? 'visible' : ''}">
-        <div class="tap-zone left"></div>
-        <div class="tap-zone center"></div>
-        <div class="tap-zone right">        </div>
-    </div>
-    
-    <!-- Page switcher (bottom) - visible during both swiping and carousel mode -->
-    <div class="page-switcher {isSwiping || isCarouselMode ? 'visible' : ''}">
+    <!-- Page switcher (bottom) - visible only in carousel mode -->
+    <div class="page-switcher {isCarouselMode ? 'visible' : ''}">
         <div class="page-items">
             {#each pageNames as name, i}
                 <div class="page-item {i === currentPageIndex ? 'active' : ''}" 
-                     on:click={() => isCarouselMode ? handleCarouselPageSelect(i) : setPage(i)}
+                     on:click={() => handleCarouselPageSelect(i)}
                      role="button"
                      tabindex="0">
                     <div class="page-icon"></div>
@@ -1094,7 +994,7 @@
                     opacity: 0,
                     easing: cubicOut
                 }}
-                style="will-change: transform, opacity; transform: scale({isSwiping || isCarouselMode ? 0.85 : 1}) translateZ(0) translateX({isSwiping ? swipeProgress * 100 : 0}px);">
+                style="will-change: transform, opacity; transform: scale({isSwiping || isCarouselMode ? 0.8 : 1}) translateZ(0) translateX({isSwiping ? swipeProgress * 100 : 0}px);">
                 <svelte:component this={pages[currentPageIndex]} />
             </div>
         {/key}

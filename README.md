@@ -20,7 +20,7 @@ using gemini 2.5 flash along with access to a wide base of pre-existing verified
 
 this software is released under the Mozilla Public License Version 2.0, but it honestly isn't really that deep just yet so just do whatever you want, it isn't like i'm bothered enough to sue anyone or take legal action.
 
-## todo
+### todo
 - qibla compass?
 - allow users to use multiple providers (gpt, gemini, claude etc)
 - gradual animation changing throughout the day and based on weather
@@ -30,12 +30,18 @@ this software is released under the Mozilla Public License Version 2.0, but it h
 - alif needs update to be in line with current plates engine and it needs to be faster
 - make mosques page better (auth, events update like a tg channel, once app is done set defaults etc)
 - need to think about verse by verse implementation, how to not reload but go up a verse through scrolling
+- full codebase migration to tailwindcss
 
 ### 0.3 update
 - qibla page fixed with design changes for minimalism and qol, moved from google maps api to openstreetmap
 - we have a quran page
 - alif api key modal update
-- bumped engine to 2.5 flash
+- bumped engine to gemini 2.5 flash
 - shake to switch page on mobile
 - updated page switcher
 - and more optimisations and bug fixes
+
+### 0.3.1
+- carousel mode WOOOOOO
+- no more janky swiping :)) no problem
+- added version indicator in the bottom left of the about page

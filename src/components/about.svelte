@@ -365,6 +365,82 @@
     });
 </script>
 
+<div class="about-page" style="--gradient-color-1: {gradientColors[0] || '#1a2a6c'}; --gradient-color-2: {gradientColors[1] || '#b21f1f'}; --gradient-color-3: {gradientColors[2] || '#fdbb2d'};">
+    <!-- Islamic geometric background -->
+    <div class="background">
+        <!-- Dot matrix overlay -->
+        <div class="dot-matrix"></div>
+        
+        <!-- SVG shapes -->
+        <svg class="shapes" viewBox="-50 -50 100 100" preserveAspectRatio="xMidYMid slice">
+            <defs>
+                {#each shapes as shape (shape.id)}
+                    {#if shape.type === 'star'}
+                        <linearGradient id={`shapeGradient-${shape.id}`} x1="0%" y1="0%" x2="100%" y2="100%">
+                            <stop offset="0%" stop-color={gradientColors[0] || '#1a2a6c'} />
+                            <stop offset="50%" stop-color={gradientColors[1] || '#b21f1f'} />
+                            <stop offset="100%" stop-color={gradientColors[2] || '#fdbb2d'} />
+                        </linearGradient>
+                    {:else}
+                        <linearGradient id={`shapeGradient-${shape.id}`} x1="0%" y1="0%" x2="100%" y2="100%">
+                            <stop offset="0%" stop-color={gradientColors[0] || '#1a2a6c'} />
+                            <stop offset="50%" stop-color={gradientColors[1] || '#b21f1f'} />
+                            <stop offset="100%" stop-color={gradientColors[2] || '#fdbb2d'} />
+                        </linearGradient>
+                    {/if}
+                {/each}
+            </defs>
+            {#each shapes as shape (shape.id)}
+                <g style="transform: translate({shape.x}%, {shape.y}%) rotate({shape.rotation}deg);">
+                    {#if shape.type === 'star'}
+                        <path 
+                            d={getStarPoints(shape.size)} 
+                            fill={`url(#shapeGradient-${shape.id})`}
+                            class="shape"
+                        />
+                    {:else}
+                        <path 
+                            d={getCrescentPath(shape.size)} 
+                            fill={`url(#shapeGradient-${shape.id})`}
+                            fill-rule="evenodd"
+                            class="shape"
+                        />
+                    {/if}
+                </g>
+            {/each}
+        </svg>
+    </div>
+    
+    <!-- Content section -->
+    <div class="container">
+        <div class="about-container">
+            {#if showHeading}
+                <h1 class="visible white-text" class:gradient-active={gradientActive} data-greeting={greetingText}>
+                    {greetingText}
+                </h1>
+            {/if}
+            
+            {#if showContent}
+                <div class="content-wrapper" transition:slide={{ duration: 800, easing: cubicOut, axis: 'y' }}>
+                    <div class="content-fade" in:fade={{ duration: 600, delay: 200 }}>
+                        <p>i'm max, or abdurrahman, and i am a cantonese-english muslim teen and the founder of <span style="color: #ff5705;">a</span>technology company. i started akh because there are a lot of salah time apps, however none looked exactly the way i wanted them to or had the feature set i wanted. i want something minimal and something that looks beautiful. i like making applications and it is my job, you can view my <a href="https://undivisible.dev/" class="personal-link">personal website</a> and my <a href="https://atechnology.company/" class="business-link">business website</a>.</p>
+                        <p>now, you may notice there are two buttons at the bottom. the left one goes to my <a href="https://buymeacoffee.com/undivisible" class="link-donations">link for donations</a>. i make no money off personal projects like these, so it is appreciated. i always put it back into my projects, charity, or i eat food. i usually work alone, or i have some brothers that help every now and then. however, "the other button" goes to the <a href="https://www.alihsan.org.au/project/emergency-appeal" class="foundation-link">Al-Ihsan Foundation</a>, and they support people who actually need it, unlike me. (i have some other sources of income). i'm just leaving that option open, it's there.</p>
+                        <p>jazakAllah khair, tyvm for donating, if you do))</p>
+                    </div>
+                </div>
+            {/if}
+            {#if showButtons}
+                <div class="buttons" transition:slide={{ duration: 400, easing: cubicOut, axis: 'y' }}>
+                    <a href="https://buymeacoffee.com/undivisible" class="donate-button">{t('donate_here')}</a>
+                    <a href="https://www.alihsan.org.au/project/emergency-appeal" class="foundation-button">{t('the_other_button')}</a>
+                </div>
+            {/if}
+        </div>
+    </div>
+    <!-- Version info -->
+    <div class="version-info">akh v0.3.1 alpha - an <span style="color: #ff5705;">a</span>technology company project</div>
+</div>
+
 <style>
     /* Background styles */
     .about-page {
@@ -641,6 +717,15 @@
         text-decoration: underline;
     }
     
+    .version-info {
+        position: absolute;
+        bottom: 1rem;
+        left: 1rem;
+        color: #888;
+        font-size: 0.8rem;
+        z-index: 20;
+    }
+
     /* Media queries for responsive text size on mobile */
     @media (max-width: 768px) {
         h1 {
@@ -683,77 +768,3 @@
         }
     }
 </style>
-
-<div class="about-page" style="--gradient-color-1: {gradientColors[0] || '#1a2a6c'}; --gradient-color-2: {gradientColors[1] || '#b21f1f'}; --gradient-color-3: {gradientColors[2] || '#fdbb2d'};">
-    <!-- Islamic geometric background -->
-    <div class="background">
-        <!-- Dot matrix overlay -->
-        <div class="dot-matrix"></div>
-        
-        <!-- SVG shapes -->
-        <svg class="shapes" viewBox="-50 -50 100 100" preserveAspectRatio="xMidYMid slice">
-            <defs>
-                {#each shapes as shape (shape.id)}
-                    {#if shape.type === 'star'}
-                        <linearGradient id={`shapeGradient-${shape.id}`} x1="0%" y1="0%" x2="100%" y2="100%">
-                            <stop offset="0%" stop-color={gradientColors[0] || '#1a2a6c'} />
-                            <stop offset="50%" stop-color={gradientColors[1] || '#b21f1f'} />
-                            <stop offset="100%" stop-color={gradientColors[2] || '#fdbb2d'} />
-                        </linearGradient>
-                    {:else}
-                        <linearGradient id={`shapeGradient-${shape.id}`} x1="0%" y1="0%" x2="100%" y2="100%">
-                            <stop offset="0%" stop-color={gradientColors[0] || '#1a2a6c'} />
-                            <stop offset="50%" stop-color={gradientColors[1] || '#b21f1f'} />
-                            <stop offset="100%" stop-color={gradientColors[2] || '#fdbb2d'} />
-                        </linearGradient>
-                    {/if}
-                {/each}
-            </defs>
-            {#each shapes as shape (shape.id)}
-                <g style="transform: translate({shape.x}%, {shape.y}%) rotate({shape.rotation}deg);">
-                    {#if shape.type === 'star'}
-                        <path 
-                            d={getStarPoints(shape.size)} 
-                            fill={`url(#shapeGradient-${shape.id})`}
-                            class="shape"
-                        />
-                    {:else}
-                        <path 
-                            d={getCrescentPath(shape.size)} 
-                            fill={`url(#shapeGradient-${shape.id})`}
-                            fill-rule="evenodd"
-                            class="shape"
-                        />
-                    {/if}
-                </g>
-            {/each}
-        </svg>
-    </div>
-    
-    <!-- Content section -->
-    <div class="container">
-        <div class="about-container">
-            {#if showHeading}
-                <h1 class="visible white-text" class:gradient-active={gradientActive} data-greeting={greetingText}>
-                    {greetingText}
-                </h1>
-            {/if}
-            
-            {#if showContent}
-                <div class="content-wrapper" transition:slide={{ duration: 800, easing: cubicOut, axis: 'y' }}>
-                    <div class="content-fade" in:fade={{ duration: 600, delay: 200 }}>
-                        <p>i'm max, or abdurrahman, and i am a cantonese-english muslim teen and the founder of <span style="color: #ff6600;">a</span>technology company. i started akh because there are a lot of salah time apps, however none looked exactly the way i wanted them to or had the feature set i wanted. i want something minimal and something that looks beautiful. i like making applications and it is my job, you can view my <a href="https://undivisible.dev/" class="personal-link">personal website</a> and my <a href="https://atechnology.company/" class="business-link">business website</a>.</p>
-                        <p>now, you may notice there are two buttons at the bottom. the left one goes to my <a href="https://buymeacoffee.com/undivisible" class="link-donations">link for donations</a>. i make no money off personal projects like these, so it is appreciated. i always put it back into my projects, charity, or i eat food. i usually work alone, or i have some brothers that help every now and then. however, "the other button" goes to the <a href="https://www.alihsan.org.au/project/emergency-appeal" class="foundation-link">Al-Ihsan Foundation</a>, and they support people who actually need it, unlike me. (i have some other sources of income). i'm just leaving that option open, it's there.</p>
-                        <p>jazakAllah khair, tyvm for donating, if you do :)</p>
-                    </div>
-                </div>
-            {/if}
-            {#if showButtons}
-                <div class="buttons" transition:slide={{ duration: 400, easing: cubicOut, axis: 'y' }}>
-                    <a href="https://buymeacoffee.com/undivisible" class="donate-button">{t('donate_here')}</a>
-                    <a href="https://www.alihsan.org.au/project/emergency-appeal" class="foundation-button">{t('the_other_button')}</a>
-                </div>
-            {/if}
-        </div>
-    </div>
-</div>
