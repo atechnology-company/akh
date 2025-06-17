@@ -31,6 +31,7 @@ this software is released under the Mozilla Public License Version 2.0, but it h
 - make mosques page better (auth, events update like a tg channel, once app is done set defaults etc)
 - need to think about verse by verse implementation, how to not reload but go up a verse through scrolling
 - full codebase migration to tailwindcss
+- update readme - geomagnetism quranapi.pages.dev openstreetmap gemini api link tailwindcss umami cloud analytics
 
 ### 0.3 update
 - qibla page fixed with design changes for minimalism and qol, moved from google maps api to openstreetmap
@@ -39,9 +40,14 @@ this software is released under the Mozilla Public License Version 2.0, but it h
 - bumped engine to gemini 2.5 flash
 - shake to switch page on mobile
 - updated page switcher
+- umami analytics
 - and more optimisations and bug fixes
 
 ### 0.3.1
 - carousel mode WOOOOOO
 - no more janky swiping :)) no problem
 - added version indicator in the bottom left of the about page
+- carousel mode improvements from previous version
+
+### 0.3.2
+- attempting to fix compass issues in qibla
