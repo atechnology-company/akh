@@ -1,7 +1,7 @@
 {
 	"name": "akh",
 	"private": true,
-	"version": "0.3.1-alpha",
+	"version": "0.3.2-alpha",
 	"type": "module",
 	"scripts": {
 		"dev": "turbo run dev:web dev:android dev:ios --parallel",
@@ -79,6 +79,7 @@
 		"autosize": "^6.0.1",
 		"dotenv": "^16.4.7",
 		"firebase": "^11.6.0",
+		"geomagnetism": "^0.2.0",
 		"jquery": "^3.7.1",
 		"marked": "^15.0.7",
 		"nativescript": "^8.9.1"

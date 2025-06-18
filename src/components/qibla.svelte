@@ -3,6 +3,7 @@
   import { calculateQiblaDirection } from '../modules/qibla';
   import { t } from '$lib/i18n';
   import { accentColor, gradientColor } from '$lib/stores/accentColor';
+  import * as geomagnetism from 'geomagnetism';
   
   let leafletDeviceDirectionLine: any = null;
   
@@ -13,7 +14,10 @@
   let watchId: number;
   
   let currentHeading: number = 0;
-  let isCalibrating: boolean = false;
+  let smoothedHeading: number = 0;
+  let lastValidHeading: number = 0;
+  let headingHistory: number[] = [];
+  let magneticDeclination: number = 0;
 
   let leafletMap: any = null;
   
@@ -26,7 +30,6 @@
   let accuracyCircle: any = null;
   
   // Add variables for compass accuracy tracking
-  let compassAccuracy: number = 0; // 0-1 scale where 1 is perfect accuracy
   let isMobileDevice: boolean = false;
   
   // Импортируем модуль NativeScript geolocation если он доступен
@@ -54,18 +57,100 @@
       return `${Math.round(meters)} m`;
     }
   }
-  
+
+  // Smooth heading updates to reduce jitter
+  function smoothHeading(newHeading: number): number {
+    // Add to history
+    headingHistory.push(newHeading);
+    
+    // Keep only last 5 readings for smoothing
+    if (headingHistory.length > 5) {
+      headingHistory.shift();
+    }
+    
+    // Detect and handle sudden jumps (likely glitches)
+    if (lastValidHeading !== 0) {
+      let diff = Math.abs(newHeading - lastValidHeading);
+      if (diff > 180) {
+        diff = 360 - diff; // Handle circular nature
+      }
+      
+      // If change is too dramatic (>90 degrees), ignore this reading
+      if (diff > 90) {
+        console.warn(`Ignoring erratic heading change: ${lastValidHeading} -> ${newHeading}`);
+        return smoothedHeading; // Return previous smoothed value
+      }
+    }
+    
+    // Calculate moving average, handling circular values
+    if (headingHistory.length === 1) {
+      return newHeading;
+    }
+    
+    // Convert to unit vectors for proper circular averaging
+    let sumX = 0;
+    let sumY = 0;
+    
+    for (const heading of headingHistory) {
+      const radians = (heading * Math.PI) / 180;
+      sumX += Math.cos(radians);
+      sumY += Math.sin(radians);
+    }
+    
+    const avgX = sumX / headingHistory.length;
+    const avgY = sumY / headingHistory.length;
+    
+    let avgHeading = Math.atan2(avgY, avgX) * (180 / Math.PI);
+    if (avgHeading < 0) {
+      avgHeading += 360;
+    }
+    
+    lastValidHeading = avgHeading;
+    return avgHeading;
+  }
+
   // Detect if device is mobile
   function detectMobileDevice(): boolean {
     return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) ||
            (window.DeviceOrientationEvent !== undefined && typeof (window.DeviceOrientationEvent as any).requestPermission === 'function');
   }
   
-  // Calculate compass accuracy based on heading difference from qibla
-  function calculateCompassAccuracy(): number {
-    if (qiblaDirection === 0 || currentHeading === 0) return 0;
+  // Calculate magnetic declination for the user's location
+  function calculateMagneticDeclination(latitude: number, longitude: number): number {
+    try {
+      const date = new Date();
+      const magData = geomagnetism.model(date).point([latitude, longitude]);
+      const declination = magData.decl; // Declination in degrees
+      console.log(`Magnetic declination for location (${latitude.toFixed(4)}, ${longitude.toFixed(4)}) on ${date.toDateString()}: ${declination.toFixed(2)}°`);
+      return declination;
+    } catch (error) {
+      console.warn('Failed to calculate magnetic declination:', error);
+      return 0;
+    }
+  }
+
+  // Apply magnetic declination correction to compass heading
+  function correctMagneticHeading(magneticHeading: number, declination: number): number {
+    // Convert magnetic heading to true heading by adding declination
+    // Positive declination = magnetic north is east of true north
+    // Negative declination = magnetic north is west of true north
+    let trueHeading = magneticHeading + declination;
     
-    let diff = Math.abs(currentHeading - qiblaDirection);
+    // Normalize to 0-360 range
+    while (trueHeading < 0) trueHeading += 360;
+    while (trueHeading >= 360) trueHeading -= 360;
+    
+    return trueHeading;
+  }
+
+  // Calculate qibla direction accuracy (0-1, where 1 is perfect alignment)
+  function calculateQiblaAccuracy(): number {
+    if (qiblaDirection === 0) return 0;
+    
+    const headingToUse = smoothedHeading || currentHeading;
+    if (headingToUse === 0) return 0;
+    
+    let diff = Math.abs(headingToUse - qiblaDirection);
     // Handle circular nature of compass (0° = 360°)
     if (diff > 180) {
       diff = 360 - diff;
@@ -75,6 +160,14 @@
     if (diff <= 5) return 1;
     if (diff >= 90) return 0;
     return 1 - ((diff - 5) / 85);
+  }
+
+  // Get color based on qibla accuracy (red when far, green when close)
+  function getQiblaAccuracyColor(): string {
+    const accuracy = calculateQiblaAccuracy();
+    const red = Math.round(255 * (1 - accuracy));
+    const green = Math.round(255 * accuracy);
+    return `rgb(${red}, ${green}, 0)`;
   }
   
   onMount(() => {
@@ -268,13 +361,32 @@
               
               // Обновляем направление устройства если оно доступно
               if (location.direction && location.direction !== -1) {
-                currentHeading = location.direction;
-                // Обновляем линию направления на карте
-                updateDeviceDirectionLine();
+                const rawHeading = location.direction;
+                // Apply magnetic declination correction using geomagnetism library
+                const correctedHeading = correctMagneticHeading(rawHeading, magneticDeclination);
+                const newSmoothedHeading = smoothHeading(correctedHeading);
+                
+                // Only update if change is significant
+                if (Math.abs(newSmoothedHeading - smoothedHeading) > 1) {
+                  currentHeading = newSmoothedHeading;
+                  smoothedHeading = newSmoothedHeading;
+                  
+                  console.log(`NativeScript Compass: Raw=${rawHeading.toFixed(1)}°, Corrected=${correctedHeading.toFixed(1)}°, Smoothed=${smoothedHeading.toFixed(1)}°, Declination=${magneticDeclination.toFixed(1)}°`);
+                  
+                  // Обновляем линию направления на карте
+                  updateDeviceDirectionLine();
+                }
               }
               
               // Пересчитываем направление на Киблу
               qiblaDirection = calculateQiblaDirection(location.latitude, location.longitude);
+              
+              // Recalculate magnetic declination if location changed significantly
+              const newDeclination = calculateMagneticDeclination(location.latitude, location.longitude);
+              if (Math.abs(newDeclination - magneticDeclination) > 0.5) {
+                magneticDeclination = newDeclination;
+                console.log(`Updated magnetic declination: ${magneticDeclination.toFixed(2)}°`);
+              }
               
               // Обновляем карту
               updateMapWithLocation();
@@ -312,13 +424,32 @@
           
           // Обновляем направление устройства если оно доступно через Web API
           if (position.coords.heading !== null && position.coords.heading !== undefined) {
-            currentHeading = position.coords.heading;
-            // Обновляем линию направления на карте
-            updateDeviceDirectionLine();
+            const rawHeading = position.coords.heading;
+            // Apply magnetic declination correction using geomagnetism library
+            const correctedHeading = correctMagneticHeading(rawHeading, magneticDeclination);
+            const newSmoothedHeading = smoothHeading(correctedHeading);
+            
+            // Only update if change is significant
+            if (Math.abs(newSmoothedHeading - smoothedHeading) > 1) {
+              currentHeading = newSmoothedHeading;
+              smoothedHeading = newSmoothedHeading;
+              
+              console.log(`Web API Compass: Raw=${rawHeading.toFixed(1)}°, Corrected=${correctedHeading.toFixed(1)}°, Smoothed=${smoothedHeading.toFixed(1)}°, Declination=${magneticDeclination.toFixed(1)}°`);
+              
+              // Обновляем линию направления на карте
+              updateDeviceDirectionLine();
+            }
           }
           
           // Пересчитываем направление на Киблу
           qiblaDirection = calculateQiblaDirection(lat, lng);
+          
+          // Recalculate magnetic declination if location changed significantly
+          const newDeclination = calculateMagneticDeclination(lat, lng);
+          if (Math.abs(newDeclination - magneticDeclination) > 0.5) {
+            magneticDeclination = newDeclination;
+            console.log(`Updated magnetic declination: ${magneticDeclination.toFixed(2)}°`);
+          }
           
           // Обновляем карту
           updateMapWithLocation();
@@ -346,17 +477,24 @@
     
     userLocation = { lat, lng };
     
+    // Calculate magnetic declination for this location
+    magneticDeclination = calculateMagneticDeclination(lat, lng);
+    
     // Проверяем, доступно ли направление устройства
     if (position.coords.heading !== null && position.coords.heading !== undefined) {
-      currentHeading = position.coords.heading;
-      console.log(`Device heading from geolocation: ${currentHeading}`);
+      const rawHeading = position.coords.heading;
+      // Apply magnetic declination correction and smoothing
+      const correctedHeading = correctMagneticHeading(rawHeading, magneticDeclination);
+      currentHeading = smoothHeading(correctedHeading);
+      smoothedHeading = currentHeading;
+      console.log(`Device heading from geolocation: Raw=${rawHeading}°, Corrected=${correctedHeading}°, Smoothed=${currentHeading}°`);
     }
     
     // Рассчитываем направление на Киблу
     qiblaDirection = calculateQiblaDirection(lat, lng);
     
-    // Calculate compass accuracy for UI feedback
-    compassAccuracy = calculateCompassAccuracy();
+    // Calculate magnetic declination for this location
+    magneticDeclination = calculateMagneticDeclination(lat, lng);
     
     // Обновляем карту с местоположением и линией Киблы
     // Pass true to automatically zoom to user location
@@ -382,8 +520,6 @@
   }
   
   function calibrateCompass() {
-    isCalibrating = true;
-    
     // Если используем NativeScript, обновляем местоположение для получения свежего направления
     if (isUsingNativeDirection && nativescriptGeolocation) {
       nativescriptGeolocation.enableLocationRequest()
@@ -416,10 +552,7 @@
       }
     }
     
-    // Показываем инструкции по калибровке
-    setTimeout(() => {
-      isCalibrating = false;
-    }, 10000); // Даем 10 секунд на калибровку
+    // Compass calibration complete - no UI feedback needed
   }
   
   function handleLocationError(error: GeolocationPositionError) {
@@ -444,15 +577,47 @@
   function handleOrientation(event: DeviceOrientationEvent) {
     // Get compass heading from device
     if (event.alpha !== null) {
-      // Alpha is the compass direction the device is facing in degrees
-      currentHeading = event.alpha;
+      let rawHeading = event.alpha;
       
-      // Calculate compass accuracy for UI feedback
-      compassAccuracy = calculateCompassAccuracy();
+      // Fix for different browser implementations
+      // Some browsers report alpha as 0-360, others as -180 to 180
+      if (rawHeading < 0) {
+        rawHeading += 360;
+      }
       
-      // Обновляем линию направления на карте если есть местоположение
-      if (userLocation) {
-        updateDeviceDirectionLine();
+      // Apply compass heading correction for different platforms
+      if (typeof window !== 'undefined') {
+        // iOS Safari reports compass differently than Android
+        const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+        const isAndroid = /Android/.test(navigator.userAgent);
+        
+        if (isIOS) {
+          // iOS: alpha is degrees from north, clockwise - use as is
+          // Previous correction was causing east/west flip
+          // rawHeading is already correct for iOS
+        } else if (isAndroid) {
+          // Android: alpha is typically correct as-is
+          // No adjustment needed
+        }
+      }
+      
+      // Apply magnetic declination correction to get true heading
+      const correctedHeading = correctMagneticHeading(rawHeading, magneticDeclination);
+      
+      // Apply smoothing to reduce jitter
+      const newSmoothedHeading = smoothHeading(correctedHeading);
+      
+      // Only update if the change is significant (reduces unnecessary updates)
+      if (Math.abs(newSmoothedHeading - smoothedHeading) > 1) {
+        currentHeading = newSmoothedHeading;
+        smoothedHeading = newSmoothedHeading;
+        
+        console.log(`Compass: Raw=${rawHeading.toFixed(1)}°, Corrected=${correctedHeading.toFixed(1)}°, Smoothed=${smoothedHeading.toFixed(1)}°, Declination=${magneticDeclination.toFixed(1)}°`);
+        
+        // Обновляем линию направления на карте если есть местоположение
+        if (userLocation) {
+          updateDeviceDirectionLine();
+        }
       }
     }
   }
@@ -468,8 +633,11 @@
   function updateLeafletDeviceDirectionLine() {
     if (!leafletMap || !userLocation || currentHeading === 0) return;
     
+    // Use the smoothed heading for display
+    const displayHeading = smoothedHeading || currentHeading;
+    
     // Calculate endpoint for the direction line
-    const headingRad = (currentHeading * Math.PI) / 180;
+    const headingRad = (displayHeading * Math.PI) / 180;
     
     // Clear previous line
     if (leafletDeviceDirectionLine) {
@@ -498,10 +666,8 @@
     const userLatLng = [userLocation.lat, userLocation.lng] as any;
     const endLatLng = [endLat, endLng] as any;
     
-    // Color based on compass accuracy: red (poor) to green (perfect)
-    const red = Math.floor(255 * (1 - compassAccuracy));
-    const green = Math.floor(255 * compassAccuracy);
-    const compassColor = `rgb(${red}, ${green}, 0)`;
+    // Use qibla accuracy color (red when far, green when close)
+    const compassColor = getQiblaAccuracyColor();
     
     // Draw compass direction line with accuracy-based color
     leafletDeviceDirectionLine = L.polyline([
@@ -651,14 +817,14 @@
     const qiblaEndLat = lat2 * 180 / Math.PI;
     const qiblaEndLng = lon2 * 180 / Math.PI;
     
-    // Draw main qibla line with accent color
+    // Draw main qibla line with dynamic accent color
     const qiblaPolyline = L.polyline([
       userLatLng,
       [qiblaEndLat, qiblaEndLng]
     ], {
-      color: 'var(--accent-color)',
-      weight: 3,
-      opacity: 0.9
+      color: $accentColor, // Use dynamic accent color from store
+      weight: 4,
+      opacity: 1.0
     }).addTo(leafletMap);
     
     // Add 15-degree tolerance area (semi-transparent)
@@ -678,17 +844,17 @@
     const rightLon2 = lon1 + Math.atan2(Math.sin(rightAngleRad) * Math.sin(distance / R) * Math.cos(lat1),
                          Math.cos(distance / R) - Math.sin(lat1) * Math.sin(rightLat2));
     
-    // Create tolerance area polygon
+    // Create tolerance area polygon with dynamic accent color
     const toleranceArea = (L as any).polygon([
       userLatLng,
       [leftLat2 * 180 / Math.PI, leftLon2 * 180 / Math.PI],
       [rightLat2 * 180 / Math.PI, rightLon2 * 180 / Math.PI]
     ], {
-      color: 'var(--accent-color)',
-      weight: 1,
-      opacity: 0.3,
-      fillColor: 'var(--accent-color)',
-      fillOpacity: 0.1
+      color: $accentColor, // Use dynamic accent color from store
+      weight: 2,
+      opacity: 0.6,
+      fillColor: $accentColor, // Use dynamic accent color from store
+      fillOpacity: 0.15
     }).addTo(leafletMap);
   }
   
@@ -746,10 +912,11 @@
         zoomControl: false // Remove zoom buttons
       }).setView([21.4225, 39.8262], 3);
       
-      // Add OpenStreetMap tile layer with a warm-colored style that fits the app's theme
-      L.tileLayer('https://{s}.tile.openstreetmap.fr/hot/{z}/{x}/{y}.png', {
-        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
-        maxZoom: 19
+      // Add dark mode OpenStreetMap tile layer
+      L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
+        maxZoom: 20,
+        subdomains: 'abcd'
       }).addTo(leafletMap);
       
       // Verify map was initialized correctly
@@ -774,175 +941,43 @@
   }
 </script>
 
-<div class="qibla-container">
-  <div id="map"></div>
-  
-  {#if isLoading}
-    <div class="loading">
-      <div class="spinner"></div>
-      <p>{t('qibla_finding')}</p>
-    </div>
-  {:else if errorMessage}
-    <div class="error">
-      <p>{errorMessage}</p>
-      <button on:click={startQiblaFinder}>
-        {t('retry')}
-      </button>
-    </div>
-  {/if}
-  
-  {#if isCalibrating}
-    <div class="calibration-overlay">
-      <div class="calibration-content">
-        <h3>{t('qibla_permission')}</h3>
-        <div class="figure-eight"></div>
-        <p>{t('qibla_north')}</p>
-        <button on:click={() => isCalibrating = false}>OK</button>
-      </div>
-    </div>
-  {/if}
-</div>
-
 <style>
-  .qibla-container {
-    position: relative;
-    width: 100%;
-    height: 100vh;
-    font-family: 'Onest', sans-serif;
-    background: #fff8e7;
-    color: #000;
-    overflow: hidden;
-    max-width: none;
-  }
-  
-  #map {
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    z-index: 1;
-  }
-  
-  .loading {
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-    align-items: center;
-    background: linear-gradient(135deg, rgba(0, 0, 0, 0.95), rgba(0, 0, 0, 0.9));
-    backdrop-filter: blur(10px);
-    color: #ffffff;
-    z-index: 1000;
-  }
-  
-  .spinner {
-    width: 50px;
-    height: 50px;
-    border: 5px solid rgba(255, 255, 255, 0.2);
-    border-top-color: var(--accent-color);
-    border-radius: 50%;
-    animation: spin 1s linear infinite;
-    margin-bottom: 20px;
-  }
-  
-  @keyframes spin {
-    to { transform: rotate(360deg); }
-  }
-  
-  .error {
-    position: absolute;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    background: linear-gradient(135deg, rgba(255, 248, 231, 0.95), rgba(255, 248, 231, 0.9));
-    backdrop-filter: blur(10px);
-    border-radius: 16px;
-    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.15);
-    border: 1px solid rgba(255, 255, 255, 0.2);
-    padding: 24px;
-    text-align: center;
-    z-index: 1000;
-    max-width: 320px;
-  }
-  
-  .error button {
-    margin-top: 20px;
-    padding: 12px 24px;
-    background: var(--gradient-color, linear-gradient(135deg, var(--accent-color), var(--accent-color)));
-    color: white;
-    border: none;
-    border-radius: 8px;
-    cursor: pointer;
-    font-size: 16px;
-    font-weight: 600;
-    transition: all 0.3s ease;
-    box-shadow: 0 4px 16px rgba(var(--accent-color-rgb, 0, 114, 255), 0.3);
-    background-size: 200% 100%;
-    background-position: 0% center;
-  }
-  
-  .error button:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 6px 20px rgba(var(--accent-color-rgb, 0, 114, 255), 0.4);
-  }
-  
-  .calibration-overlay {
-    position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background-color: rgba(0, 0, 0, 0.8);
-    z-index: 1000;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-  }
-  
-  .calibration-content {
-    background: linear-gradient(135deg, rgba(255, 255, 255, 0.95), rgba(255, 255, 255, 0.9));
-    backdrop-filter: blur(10px);
-    padding: 24px;
-    border-radius: 16px;
-    text-align: center;
-    max-width: 80%;
-    border: 1px solid rgba(255, 255, 255, 0.2);
-    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
-  }
-  
-  .figure-eight {
-    width: 100px;
-    height: 50px;
-    margin: 20px auto;
-    position: relative;
-  }
-  
-  .figure-eight::before,
-  .figure-eight::after {
-    content: '';
-    position: absolute;
-    width: 50px;
-    height: 50px;
-    border-radius: 50%;
-    border: 3px solid var(--accent-color);
-    box-sizing: border-box;
-  }
-  
-  .figure-eight::before {
-    left: 0;
-  }
-  
-  .figure-eight::after {
-    right: 0;
-  }
-  
   /* Ensure accent color variables are available */
   :global(:root) {
     --accent-color-rgb: 0, 114, 255;
   }
 </style>
+
+<div class="relative w-full h-screen font-['Onest'] bg-gray-900 text-white overflow-hidden max-w-none">
+  <div id="map" class="absolute inset-0 z-[1]"></div>
+  
+  <!-- Qibla accuracy indicator -->
+  {#if userLocation && !isLoading && qiblaDirection > 0}
+    <div class="absolute top-4 right-4 z-[100]">
+      <div 
+        class="w-4 h-4 rounded-full border-2 border-white/50 shadow-lg"
+        style="background-color: {getQiblaAccuracyColor()};"
+        title="Qibla Direction Accuracy{magneticDeclination !== 0 ? `\nMagnetic Declination: ${magneticDeclination > 0 ? '+' : ''}${magneticDeclination.toFixed(1)}°` : ''}"
+      ></div>
+    </div>
+  {/if}
+  
+  {#if isLoading}
+    <div class="absolute inset-0 flex flex-col justify-center items-center bg-gradient-to-br from-black/95 to-black/90 backdrop-blur-[10px] text-white z-[1000]">
+      <div class="w-12 h-12 border-4 border-white/20 border-t-[var(--accent-color)] rounded-full animate-spin mb-5"></div>
+      <p class="text-lg">{t('qibla_finding')}</p>
+    </div>
+  {:else if errorMessage}
+    <div class="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 bg-gradient-to-br from-yellow-50/95 to-yellow-50/90 backdrop-blur-[10px] rounded-2xl shadow-2xl border border-white/20 p-6 text-center z-[1000] max-w-80">
+      <p class="text-gray-800 mb-5">{errorMessage}</p>
+      <button 
+        on:click={startQiblaFinder}
+        class="px-6 py-3 bg-gradient-to-r from-[var(--accent-color)] to-[var(--accent-color)] text-white border-0 rounded-lg cursor-pointer text-base font-semibold transition-all duration-300 shadow-lg hover:shadow-xl hover:-translate-y-0.5 bg-[length:200%_100%] bg-[position:0%_center]"
+        style="box-shadow: 0 4px 16px rgba(var(--accent-color-rgb, 0, 114, 255), 0.3);"
+      >
+        {t('retry')}
+      </button>
+    </div>
+  {/if}
+</div>
+
