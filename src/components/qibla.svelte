@@ -36,6 +36,14 @@
   // Geomagnetism module - loaded dynamically in browser only
   let geomagnetism: any = null;
   
+  // Default orientation detection
+  let defaultOrientation: string;
+  
+  // Simple smoothing variables
+  let lastAcceptedHeading: number = 0;
+  let isBootstrapped: boolean = false;
+  let headingBuffer: number[] = [];
+  
   // Импортируем модуль NativeScript geolocation если он доступен
   let nativescriptGeolocation: any;
   
@@ -66,131 +74,86 @@
   let lastStableHeading: number = 0;
   let lastUpdateTime: number = 0;
 
-  // Calculate variance of readings to detect instability
-  function calculateVariance(readings: number[]): number {
-    if (readings.length < 2) return 0;
-    
-    // Convert to unit vectors for circular variance
-    let sumX = 0, sumY = 0;
-    for (const heading of readings) {
-      const radians = (heading * Math.PI) / 180;
-      sumX += Math.cos(radians);
-      sumY += Math.sin(radians);
-    }
-    
-    const meanX = sumX / readings.length;
-    const meanY = sumY / readings.length;
-    const meanResultant = Math.sqrt(meanX * meanX + meanY * meanY);
-    
-    // Convert resultant to variance (1 = no variance, 0 = maximum variance)
-    const circularVariance = (1 - meanResultant) * 180; // Scale to degrees
-    return circularVariance;
-  }
-
-  let lastAcceptedHeading: number = 0;
-  let smoothBuffer: number[] = [];
-  let lastSmoothTime: number = 0;
-  let bootstrapBuffer: number[] = [];
-  let isBootstrapped: boolean = false;
-  const SMOOTH_STEP = 3; // max step for smooth movement
-  const JUMP_THRESHOLD = 8; // ignore jumps larger than this
-  const SMOOTH_SEQUENCE = 3; // how many small steps to accept a new movement
-  const BOOTSTRAP_SIZE = 6; // readings needed to find initial smooth movement
-
-  // Smooth heading updates to reduce jitter
+  // Simple smoothing to reduce minor jitter
   function smoothHeading(newHeading: number): number {
-    const now = Date.now();
-    
-    // Bootstrap phase: collect readings until we find first smooth movement
+    // If this is the first reading, initialize the buffer
     if (!isBootstrapped) {
-      bootstrapBuffer.push(newHeading);
-      if (bootstrapBuffer.length > BOOTSTRAP_SIZE) {
-        bootstrapBuffer.shift();
-      }
-      
-      // Look for a smooth sequence in the bootstrap buffer
-      if (bootstrapBuffer.length >= SMOOTH_SEQUENCE + 1) {
-        let bestSequence: number[] = [];
-        
-        // Find the longest smooth sequence
-        for (let start = 0; start <= bootstrapBuffer.length - SMOOTH_SEQUENCE; start++) {
-          let sequence = [bootstrapBuffer[start]];
-          
-          for (let i = start + 1; i < bootstrapBuffer.length; i++) {
-            let diff = Math.abs(bootstrapBuffer[i] - sequence[sequence.length - 1]);
-            if (diff > 180) diff = 360 - diff;
-            
-            if (diff <= SMOOTH_STEP) {
-              sequence.push(bootstrapBuffer[i]);
-            } else {
-              break;
-            }
-          }
-          
-          if (sequence.length >= SMOOTH_SEQUENCE && sequence.length > bestSequence.length) {
-            bestSequence = sequence;
-          }
-        }
-        
-        // If we found a good smooth sequence, bootstrap with it
-        if (bestSequence.length >= SMOOTH_SEQUENCE) {
-          lastAcceptedHeading = bestSequence[bestSequence.length - 1];
-          smoothBuffer = bestSequence.slice(-SMOOTH_SEQUENCE);
-          isBootstrapped = true;
-          lastSmoothTime = now;
-          console.log(`Bootstrapped with smooth sequence: ${bestSequence.map(h => h.toFixed(1)).join(' → ')}°`);
-          return lastAcceptedHeading;
-        }
-      }
-      
-      // Still bootstrapping, return the average of recent readings as a stable placeholder
-      if (bootstrapBuffer.length > 0) {
-        let sumX = 0, sumY = 0;
-        for (const heading of bootstrapBuffer) {
-          const radians = (heading * Math.PI) / 180;
-          sumX += Math.cos(radians);
-          sumY += Math.sin(radians);
-        }
-        let avgHeading = Math.atan2(sumY / bootstrapBuffer.length, sumX / bootstrapBuffer.length) * (180 / Math.PI);
-        if (avgHeading < 0) avgHeading += 360;
-        return avgHeading;
-      }
-      
+      headingBuffer = [newHeading];
+      lastAcceptedHeading = newHeading;
+      isBootstrapped = true;
       return newHeading;
     }
-
-    // Normal operation: we have a bootstrapped smooth movement
-    let diff = Math.abs(newHeading - lastAcceptedHeading);
-    if (diff > 180) diff = 360 - diff;
-
-    // If the new heading is a small step, accept it and add to buffer
-    if (diff <= SMOOTH_STEP) {
-      smoothBuffer.push(newHeading);
-      if (smoothBuffer.length > SMOOTH_SEQUENCE) smoothBuffer.shift();
+    
+    // Add new heading to buffer
+    headingBuffer.push(newHeading);
+    
+    // Keep only the last 5 readings for smoothing
+    if (headingBuffer.length > 5) {
+      headingBuffer.shift();
+    }
+    
+    // If we have less than 3 readings, just use the current one
+    if (headingBuffer.length < 3) {
       lastAcceptedHeading = newHeading;
-      lastSmoothTime = now;
       return newHeading;
-    } else {
-      // If it's a jump, check if we have a sequence of small steps leading to it
-      let isSmoothSequence = true;
-      for (let i = 1; i < smoothBuffer.length; i++) {
-        let step = Math.abs(smoothBuffer[i] - smoothBuffer[i - 1]);
-        if (step > 180) step = 360 - step;
-        if (step > SMOOTH_STEP) {
-          isSmoothSequence = false;
-          break;
+    }
+    
+    // Calculate median to avoid alternating values
+    const sortedBuffer = [...headingBuffer].sort((a, b) => {
+      // Handle circular sorting (0° = 360°)
+      const diffA = Math.abs(a - lastAcceptedHeading);
+      const diffB = Math.abs(b - lastAcceptedHeading);
+      const adjustedDiffA = diffA > 180 ? 360 - diffA : diffA;
+      const adjustedDiffB = diffB > 180 ? 360 - diffB : diffB;
+      return adjustedDiffA - adjustedDiffB;
+    });
+    
+    // Use median value to prevent alternating
+    const medianHeading = sortedBuffer[Math.floor(sortedBuffer.length / 2)];
+    
+    // Calculate difference from last accepted heading
+    let diff = Math.abs(medianHeading - lastAcceptedHeading);
+    if (diff > 180) {
+      diff = 360 - diff;
+    }
+    
+    // Only accept changes if they're consistent or small
+    if (diff <= 2) {
+      // Small changes are accepted immediately
+      lastAcceptedHeading = medianHeading;
+      return medianHeading;
+    } else if (diff <= 10) {
+      // Medium changes are smoothed with exponential moving average
+      const alpha = 0.3; // Smoothing factor
+      let smoothed = alpha * medianHeading + (1 - alpha) * lastAcceptedHeading;
+      
+      // Handle wraparound for averaging
+      if (Math.abs(medianHeading - lastAcceptedHeading) > 180) {
+        if (medianHeading > lastAcceptedHeading) {
+          smoothed = alpha * medianHeading + (1 - alpha) * (lastAcceptedHeading + 360);
+          if (smoothed >= 360) smoothed -= 360;
+        } else {
+          smoothed = alpha * (medianHeading + 360) + (1 - alpha) * lastAcceptedHeading;
+          if (smoothed >= 360) smoothed -= 360;
         }
       }
       
-      if (isSmoothSequence && smoothBuffer.length >= SMOOTH_SEQUENCE) {
-        // Accept the new heading as part of a smooth movement
-        smoothBuffer.push(newHeading);
-        if (smoothBuffer.length > SMOOTH_SEQUENCE) smoothBuffer.shift();
-        lastAcceptedHeading = newHeading;
-        lastSmoothTime = now;
-        return newHeading;
+      lastAcceptedHeading = smoothed;
+      return smoothed;
+    } else {
+      // Large changes need to be consistent across multiple readings
+      const recentReadings = headingBuffer.slice(-3);
+      const isConsistent = recentReadings.every((reading: number) => {
+        let readingDiff = Math.abs(reading - medianHeading);
+        if (readingDiff > 180) readingDiff = 360 - readingDiff;
+        return readingDiff <= 5;
+      });
+      
+      if (isConsistent) {
+        lastAcceptedHeading = medianHeading;
+        return medianHeading;
       } else {
-        // Ignore the jump, stay at last accepted smooth value
+        // Keep the last accepted heading if readings are inconsistent
         return lastAcceptedHeading;
       }
     }
@@ -319,6 +282,14 @@
       console.log('Qibla component is not visible in DOM, skipping initialization');
       return;
     }
+    
+    // Detect default orientation (similar to GitHub example)
+    if (screen.width > screen.height) {
+      defaultOrientation = "landscape";
+    } else {
+      defaultOrientation = "portrait";
+    }
+    console.log('Default orientation:', defaultOrientation);
     
     // Initialize component asynchronously
     const initializeComponent = async () => {
@@ -498,9 +469,6 @@
         loadUserLocation();
       });
   }
-
-  
-
   
   function loadUserLocation() {
     console.log('Starting location services...');
@@ -562,23 +530,19 @@
               // Форматируем текст точности
               updateAccuracyText(location.accuracy);
               
-              // Обновляем направление устройства если оно доступно
+              // Update device direction if available
               if (location.direction && location.direction !== -1) {
                 const rawHeading = location.direction;
-                // Apply magnetic declination correction using geomagnetism library
+                // Apply magnetic declination correction
                 const correctedHeading = correctMagneticHeading(rawHeading, magneticDeclination);
-                const newSmoothedHeading = smoothHeading(correctedHeading);
+                // Simple direct assignment - no complex smoothing
+                currentHeading = correctedHeading;
+                smoothedHeading = correctedHeading;
                 
-                // Only update if change is significant
-                if (Math.abs(newSmoothedHeading - smoothedHeading) > 1) {
-                  currentHeading = newSmoothedHeading;
-                  smoothedHeading = newSmoothedHeading;
-                  
-                  console.log(`NativeScript Compass: Raw=${rawHeading.toFixed(1)}°, Corrected=${correctedHeading.toFixed(1)}°, Smoothed=${smoothedHeading.toFixed(1)}°, Declination=${magneticDeclination.toFixed(1)}°`);
-                  
-                  // Обновляем линию направления на карте
-                  updateDeviceDirectionLine();
-                }
+                console.log(`NativeScript Compass: Raw=${rawHeading.toFixed(1)}°, Corrected=${correctedHeading.toFixed(1)}°, Declination=${magneticDeclination.toFixed(1)}°`);
+                
+                // Update direction line on map
+                updateDeviceDirectionLine();
               }
               
               // Пересчитываем направление на Киблу
@@ -634,23 +598,19 @@
             updateAccuracyText(position.coords.accuracy);
           }
           
-          // Обновляем направление устройства если оно доступно через Web API
+          // Update device direction if available through Web API
           if (position.coords.heading !== null && position.coords.heading !== undefined) {
             const rawHeading = position.coords.heading;
-            // Apply magnetic declination correction using geomagnetism library
+            // Apply magnetic declination correction
             const correctedHeading = correctMagneticHeading(rawHeading, magneticDeclination);
-            const newSmoothedHeading = smoothHeading(correctedHeading);
+            // Simple direct assignment - no complex smoothing
+            currentHeading = correctedHeading;
+            smoothedHeading = correctedHeading;
             
-            // Only update if change is significant
-            if (Math.abs(newSmoothedHeading - smoothedHeading) > 1) {
-              currentHeading = newSmoothedHeading;
-              smoothedHeading = newSmoothedHeading;
-              
-              console.log(`Web API Compass: Raw=${rawHeading.toFixed(1)}°, Corrected=${correctedHeading.toFixed(1)}°, Smoothed=${smoothedHeading.toFixed(1)}°, Declination=${magneticDeclination.toFixed(1)}°`);
-              
-              // Обновляем линию направления на карте
-              updateDeviceDirectionLine();
-            }
+            console.log(`Web API Compass: Raw=${rawHeading.toFixed(1)}°, Corrected=${correctedHeading.toFixed(1)}°, Declination=${magneticDeclination.toFixed(1)}°`);
+            
+            // Update direction line on map
+            updateDeviceDirectionLine();
           }
           
           // Пересчитываем направление на Киблу
@@ -692,14 +652,14 @@
     // Calculate magnetic declination for this location
     magneticDeclination = calculateMagneticDeclination(lat, lng);
     
-    // Проверяем, доступно ли направление устройства
+    // Check if device heading is available from geolocation
     if (position.coords.heading !== null && position.coords.heading !== undefined) {
       const rawHeading = position.coords.heading;
-      // Apply magnetic declination correction and smoothing
+      // Apply magnetic declination correction and simple smoothing
       const correctedHeading = correctMagneticHeading(rawHeading, magneticDeclination);
-      currentHeading = smoothHeading(correctedHeading);
-      smoothedHeading = currentHeading;
-      console.log(`Device heading from geolocation: Raw=${rawHeading}°, Corrected=${correctedHeading}°, Smoothed=${currentHeading}°`);
+      currentHeading = correctedHeading;
+      smoothedHeading = correctedHeading;
+      console.log(`Device heading from geolocation: Raw=${rawHeading}°, Corrected=${correctedHeading}°`);
     }
     
     // Рассчитываем направление на Киблу
@@ -791,52 +751,28 @@
     if (event.alpha !== null) {
       let rawHeading = event.alpha;
       
-      // Fix for different browser implementations
-      // Some browsers report alpha as 0-360, others as -180 to 180
-      if (rawHeading < 0) {
-        rawHeading += 360;
+      // Use webkitCompassHeading if available (iOS Safari)
+      if (typeof (event as any).webkitCompassHeading !== "undefined") {
+        rawHeading = (event as any).webkitCompassHeading; // iOS non-standard
       }
       
-      // Apply compass heading correction for different platforms
-      if (typeof window !== 'undefined') {
-        // iOS Safari reports compass differently than Android
-        const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
-        const isAndroid = /Android/.test(navigator.userAgent);
-        
-        if (isIOS) {
-          // iOS: alpha is degrees from north, clockwise
-          // Need to flip east/west: reverse the direction
-          rawHeading = 360 - rawHeading;
-          if (rawHeading >= 360) rawHeading -= 360;
-        } else if (isAndroid) {
-          // Android: alpha is typically correct, but may need east/west flip
-          // Flip east/west by reversing the direction
-          rawHeading = 360 - rawHeading;
-          if (rawHeading >= 360) rawHeading -= 360;
-        } else {
-          // Desktop browsers - flip east/west
-          rawHeading = 360 - rawHeading;
-          if (rawHeading >= 360) rawHeading -= 360;
-        }
+      // Normalize to 0-360 range
+      if (rawHeading < 0) {
+        rawHeading += 360;
       }
       
       // Apply magnetic declination correction to get true heading
       const correctedHeading = correctMagneticHeading(rawHeading, magneticDeclination);
       
-      // Apply smoothing to reduce jitter
-      const newSmoothedHeading = smoothHeading(correctedHeading);
+      // Apply smoothing to prevent alternating directions and jitter
+      currentHeading = correctedHeading;
+      smoothedHeading = smoothHeading(correctedHeading);
       
-      // Only update if the change is significant (reduces unnecessary updates)
-      if (Math.abs(newSmoothedHeading - smoothedHeading) > 0.05) { // Very low threshold for high update rate
-        currentHeading = newSmoothedHeading;
-        smoothedHeading = newSmoothedHeading;
-        
-        console.log(`Compass: Raw=${rawHeading.toFixed(1)}°, Corrected=${correctedHeading.toFixed(1)}°, Smoothed=${smoothedHeading.toFixed(1)}°, Declination=${magneticDeclination.toFixed(1)}°`);
-        
-        // Обновляем линию направления на карте если есть местоположение
-        if (userLocation) {
-          updateDeviceDirectionLine();
-        }
+      console.log(`Compass: Raw=${rawHeading.toFixed(1)}°, Corrected=${correctedHeading.toFixed(1)}°, Smoothed=${smoothedHeading.toFixed(1)}°, Declination=${magneticDeclination.toFixed(1)}°`);
+      
+      // Update direction line on map if location is available
+      if (userLocation) {
+        updateDeviceDirectionLine();
       }
     }
   }
@@ -1169,17 +1105,6 @@
 
 <div class="qibla-container relative w-full h-screen font-['Onest'] bg-gray-900 text-white overflow-hidden max-w-none">
   <div id="map" class="absolute inset-0 z-[1]"></div>
-  
-  <!-- Qibla accuracy indicator removed per user request -->
-  <!-- {#if userLocation && !isLoading && qiblaDirection > 0}
-    <div class="absolute top-4 right-4 z-[100]">
-      <div 
-        class="w-4 h-4 rounded-full border-2 border-white/50 shadow-lg"
-        style="background-color: {getQiblaAccuracyColor()};"
-        title="Qibla Direction Accuracy{magneticDeclination !== 0 ? `\nMagnetic Declination: ${magneticDeclination > 0 ? '+' : ''}${magneticDeclination.toFixed(1)}°` : ''}"
-      ></div>
-    </div>
-  {/if} -->
   
   {#if isLoading}
     <div class="absolute inset-0 flex flex-col justify-center items-center bg-gradient-to-br from-black/95 to-black/90 backdrop-blur-[10px] text-white z-[1000]">
