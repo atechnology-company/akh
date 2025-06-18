@@ -1545,7 +1545,7 @@
 										<h3 class="font-onest text-2xl md:text-3xl text-white">
 											{surahInfo.surahName}
 										</h3>
-										<p class="font-amiri text-3xl md:text-4xl text-white/80" dir="rtl">
+										<p class="font-mushaf text-3xl md:text-4xl text-white/80" dir="rtl">
 											{surahInfo.surahNameArabic}
 										</p>
 										<p class="font-chivo-mono text-sm text-white/50">
@@ -1613,7 +1613,7 @@
 								 }}>
                                 <!-- Arabic Text -->
                                 <div class="mb-6 md:mb-8 arabic-text" dir="rtl">
-                                    <p class="text-2xl md:text-4xl leading-relaxed font-amiri text-white">
+                                    <p class="text-2xl md:text-4xl leading-relaxed font-mushaf text-white">
                                         {currentVerseData.arabic1}
                                     </p>
                                 </div>
@@ -1649,7 +1649,7 @@
                                                         <h4 class="font-onest text-xl md:text-2xl text-white/40">
                                                             {prevSurah.surahName}
                                                         </h4>
-                                                        <p class="font-amiri text-2xl md:text-3xl text-white/40" dir="rtl">
+                                                        <p class="font-mushaf text-2xl md:text-3xl text-white/40" dir="rtl">
                                                             {prevSurah.surahNameArabic}
                                                         </p>
                                                     </div>
@@ -1711,7 +1711,7 @@
                                                             <h4 class="font-onest text-xl md:text-2xl text-white">
                                                                 {surahInfo.surahName}
                                                             </h4>
-                                                            <p class="font-amiri text-2xl md:text-3xl text-white/80" dir="rtl">
+                                                            <p class="font-mushaf text-2xl md:text-3xl text-white/80" dir="rtl">
                                                                 {surahInfo.surahNameArabic}
                                                             </p>
                                                         </div>
@@ -1722,7 +1722,7 @@
 
                                         <!-- Arabic Text -->
                                         <div class="text-right mb-4 verse-arabic" dir="rtl">
-                                            <p class="text-xl md:text-2xl leading-relaxed font-amiri text-white">
+                                            <p class="text-xl md:text-2xl leading-relaxed font-mushaf text-white">
                                                 {verse.arabic1}
                                             </p>
                                         </div>
@@ -1771,7 +1771,7 @@
                                                         <h4 class="font-onest text-xl md:text-2xl text-white/40">
                                                             {nextSurah.surahName}
                                                         </h4>
-                                                        <p class="font-amiri text-2xl md:text-3xl text-white/40" dir="rtl">
+                                                        <p class="font-mushaf text-2xl md:text-3xl text-white/40" dir="rtl">
                                                             {nextSurah.surahNameArabic}
                                                         </p>
                                                     </div>
@@ -1885,7 +1885,7 @@
 				<div class="space-y-4">
 					<!-- Arabic Text -->
 					<div class="text-right" dir="rtl">
-						<p class="text-xl md:text-2xl leading-relaxed font-amiri text-white">
+						<p class="text-xl md:text-2xl leading-relaxed font-mushaf text-white">
 							{selectedTafseerVerse.arabic1}
 						</p>
 					</div>
@@ -1948,10 +1948,16 @@
 {/if}
 
 <style>
-	@import url('https://fonts.googleapis.com/css2?family=Amiri+Quran:wght@400;700&family=Onest:wght@400;700&family=Chivo+Mono:wght@400;700&display=swap');
+	@import url('https://fonts.googleapis.com/css2?family=Onest:wght@400;700&family=Chivo+Mono:wght@400;700&display=swap');
 	
-	:global(.font-amiri) {
-		font-family: 'Amiri Quran', serif;
+	@font-face {
+	font-family: 'Mushaf Ligatures';
+	src: local('QCF_BSML'),
+		url(https://raw.githubusercontent.com/mustafa0x/qpc-fonts/f93bf5f3/mushaf-v2-woff2/QCF_BSML.woff2);
+	}
+
+	:global(.font-mushaf) {
+		font-family: 'Mushaf Ligatures', serif;
 	}
 	
 	:global(.font-onest) {

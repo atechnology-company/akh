@@ -1,7 +1,15 @@
-# akh 0.3.3-alpha
+# akh 0.3.4-alpha
 the utilitarian muslim companion
 
-written in svelte with help from [adhan](https://github.com/batoulapps/adhan-js)([MIT](https://raw.githubusercontent.com/batoulapps/Adhan/refs/heads/master/LICENSE)), [al adhan api](https://aladhan.com/) for hijri date, [nativescript for mobile](https://nativescript.org/) and [firebase](https://firebase.google/)
+written in svelte with help from 
+- [adhan](https://github.com/batoulapps/adhan-js)([MIT](https://raw.githubusercontent.com/batoulapps/Adhan/refs/heads/master/LICENSE)) 
+- [al adhan api](https://aladhan.com/) for hijri date
+- [nativescript for mobile](https://nativescript.org/) 
+- [firebase](https://firebase.google/)
+- [king fahad quran printing complex fonts from here](https://github.com/nuqayah/qpc-fonts)
+- [gemini 2.5 flash](https://ai.google.dev/gemini-api/docs/models)
+- [quran and tafseer api](https://quranapi.pages.dev)
+- [openstreetmap](https://www.openstreetmap.org/)
 
 do not use this for religious advice please, or at least take what you get with a grain of salt and do your own research
 
@@ -57,3 +65,7 @@ this software is released under the Mozilla Public License Version 2.0, but it h
 - attempting qibla fixes
 - quran qol improvements
 - added tafseer
+
+### 0.3.4
+- changed from amiri font to king fahad quran printing complex fonts
+- updated readme

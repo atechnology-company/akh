@@ -62,55 +62,138 @@
     }
   }
 
-  // Smooth heading updates to reduce jitter
-  function smoothHeading(newHeading: number): number {
-    // Add to history
-    headingHistory.push(newHeading);
+  let jitterDetectionBuffer: number[] = [];
+  let lastStableHeading: number = 0;
+  let lastUpdateTime: number = 0;
+
+  // Calculate variance of readings to detect instability
+  function calculateVariance(readings: number[]): number {
+    if (readings.length < 2) return 0;
     
-    // Keep only last 5 readings for smoothing
-    if (headingHistory.length > 5) {
-      headingHistory.shift();
-    }
-    
-    // Detect and handle sudden jumps (likely glitches)
-    if (lastValidHeading !== 0) {
-      let diff = Math.abs(newHeading - lastValidHeading);
-      if (diff > 180) {
-        diff = 360 - diff; // Handle circular nature
-      }
-      
-      // If change is too dramatic (>90 degrees), ignore this reading
-      if (diff > 90) {
-        console.warn(`Ignoring erratic heading change: ${lastValidHeading} -> ${newHeading}`);
-        return smoothedHeading; // Return previous smoothed value
-      }
-    }
-    
-    // Calculate moving average, handling circular values
-    if (headingHistory.length === 1) {
-      return newHeading;
-    }
-    
-    // Convert to unit vectors for proper circular averaging
-    let sumX = 0;
-    let sumY = 0;
-    
-    for (const heading of headingHistory) {
+    // Convert to unit vectors for circular variance
+    let sumX = 0, sumY = 0;
+    for (const heading of readings) {
       const radians = (heading * Math.PI) / 180;
       sumX += Math.cos(radians);
       sumY += Math.sin(radians);
     }
     
-    const avgX = sumX / headingHistory.length;
-    const avgY = sumY / headingHistory.length;
+    const meanX = sumX / readings.length;
+    const meanY = sumY / readings.length;
+    const meanResultant = Math.sqrt(meanX * meanX + meanY * meanY);
     
-    let avgHeading = Math.atan2(avgY, avgX) * (180 / Math.PI);
-    if (avgHeading < 0) {
-      avgHeading += 360;
+    // Convert resultant to variance (1 = no variance, 0 = maximum variance)
+    const circularVariance = (1 - meanResultant) * 180; // Scale to degrees
+    return circularVariance;
+  }
+
+  let lastAcceptedHeading: number = 0;
+  let smoothBuffer: number[] = [];
+  let lastSmoothTime: number = 0;
+  let bootstrapBuffer: number[] = [];
+  let isBootstrapped: boolean = false;
+  const SMOOTH_STEP = 3; // max step for smooth movement
+  const JUMP_THRESHOLD = 8; // ignore jumps larger than this
+  const SMOOTH_SEQUENCE = 3; // how many small steps to accept a new movement
+  const BOOTSTRAP_SIZE = 6; // readings needed to find initial smooth movement
+
+  // Smooth heading updates to reduce jitter
+  function smoothHeading(newHeading: number): number {
+    const now = Date.now();
+    
+    // Bootstrap phase: collect readings until we find first smooth movement
+    if (!isBootstrapped) {
+      bootstrapBuffer.push(newHeading);
+      if (bootstrapBuffer.length > BOOTSTRAP_SIZE) {
+        bootstrapBuffer.shift();
+      }
+      
+      // Look for a smooth sequence in the bootstrap buffer
+      if (bootstrapBuffer.length >= SMOOTH_SEQUENCE + 1) {
+        let bestSequence: number[] = [];
+        
+        // Find the longest smooth sequence
+        for (let start = 0; start <= bootstrapBuffer.length - SMOOTH_SEQUENCE; start++) {
+          let sequence = [bootstrapBuffer[start]];
+          
+          for (let i = start + 1; i < bootstrapBuffer.length; i++) {
+            let diff = Math.abs(bootstrapBuffer[i] - sequence[sequence.length - 1]);
+            if (diff > 180) diff = 360 - diff;
+            
+            if (diff <= SMOOTH_STEP) {
+              sequence.push(bootstrapBuffer[i]);
+            } else {
+              break;
+            }
+          }
+          
+          if (sequence.length >= SMOOTH_SEQUENCE && sequence.length > bestSequence.length) {
+            bestSequence = sequence;
+          }
+        }
+        
+        // If we found a good smooth sequence, bootstrap with it
+        if (bestSequence.length >= SMOOTH_SEQUENCE) {
+          lastAcceptedHeading = bestSequence[bestSequence.length - 1];
+          smoothBuffer = bestSequence.slice(-SMOOTH_SEQUENCE);
+          isBootstrapped = true;
+          lastSmoothTime = now;
+          console.log(`Bootstrapped with smooth sequence: ${bestSequence.map(h => h.toFixed(1)).join(' → ')}°`);
+          return lastAcceptedHeading;
+        }
+      }
+      
+      // Still bootstrapping, return the average of recent readings as a stable placeholder
+      if (bootstrapBuffer.length > 0) {
+        let sumX = 0, sumY = 0;
+        for (const heading of bootstrapBuffer) {
+          const radians = (heading * Math.PI) / 180;
+          sumX += Math.cos(radians);
+          sumY += Math.sin(radians);
+        }
+        let avgHeading = Math.atan2(sumY / bootstrapBuffer.length, sumX / bootstrapBuffer.length) * (180 / Math.PI);
+        if (avgHeading < 0) avgHeading += 360;
+        return avgHeading;
+      }
+      
+      return newHeading;
     }
-    
-    lastValidHeading = avgHeading;
-    return avgHeading;
+
+    // Normal operation: we have a bootstrapped smooth movement
+    let diff = Math.abs(newHeading - lastAcceptedHeading);
+    if (diff > 180) diff = 360 - diff;
+
+    // If the new heading is a small step, accept it and add to buffer
+    if (diff <= SMOOTH_STEP) {
+      smoothBuffer.push(newHeading);
+      if (smoothBuffer.length > SMOOTH_SEQUENCE) smoothBuffer.shift();
+      lastAcceptedHeading = newHeading;
+      lastSmoothTime = now;
+      return newHeading;
+    } else {
+      // If it's a jump, check if we have a sequence of small steps leading to it
+      let isSmoothSequence = true;
+      for (let i = 1; i < smoothBuffer.length; i++) {
+        let step = Math.abs(smoothBuffer[i] - smoothBuffer[i - 1]);
+        if (step > 180) step = 360 - step;
+        if (step > SMOOTH_STEP) {
+          isSmoothSequence = false;
+          break;
+        }
+      }
+      
+      if (isSmoothSequence && smoothBuffer.length >= SMOOTH_SEQUENCE) {
+        // Accept the new heading as part of a smooth movement
+        smoothBuffer.push(newHeading);
+        if (smoothBuffer.length > SMOOTH_SEQUENCE) smoothBuffer.shift();
+        lastAcceptedHeading = newHeading;
+        lastSmoothTime = now;
+        return newHeading;
+      } else {
+        // Ignore the jump, stay at last accepted smooth value
+        return lastAcceptedHeading;
+      }
+    }
   }
 
   // Detect if device is mobile
@@ -721,12 +804,19 @@
         const isAndroid = /Android/.test(navigator.userAgent);
         
         if (isIOS) {
-          // iOS: alpha is degrees from north, clockwise - use as is
-          // Previous correction was causing east/west flip
-          // rawHeading is already correct for iOS
+          // iOS: alpha is degrees from north, clockwise
+          // Need to flip east/west: reverse the direction
+          rawHeading = 360 - rawHeading;
+          if (rawHeading >= 360) rawHeading -= 360;
         } else if (isAndroid) {
-          // Android: alpha is typically correct as-is
-          // No adjustment needed
+          // Android: alpha is typically correct, but may need east/west flip
+          // Flip east/west by reversing the direction
+          rawHeading = 360 - rawHeading;
+          if (rawHeading >= 360) rawHeading -= 360;
+        } else {
+          // Desktop browsers - flip east/west
+          rawHeading = 360 - rawHeading;
+          if (rawHeading >= 360) rawHeading -= 360;
         }
       }
       
@@ -737,7 +827,7 @@
       const newSmoothedHeading = smoothHeading(correctedHeading);
       
       // Only update if the change is significant (reduces unnecessary updates)
-      if (Math.abs(newSmoothedHeading - smoothedHeading) > 1) {
+      if (Math.abs(newSmoothedHeading - smoothedHeading) > 0.05) { // Very low threshold for high update rate
         currentHeading = newSmoothedHeading;
         smoothedHeading = newSmoothedHeading;
         
@@ -1080,8 +1170,8 @@
 <div class="qibla-container relative w-full h-screen font-['Onest'] bg-gray-900 text-white overflow-hidden max-w-none">
   <div id="map" class="absolute inset-0 z-[1]"></div>
   
-  <!-- Qibla accuracy indicator -->
-  {#if userLocation && !isLoading && qiblaDirection > 0}
+  <!-- Qibla accuracy indicator removed per user request -->
+  <!-- {#if userLocation && !isLoading && qiblaDirection > 0}
     <div class="absolute top-4 right-4 z-[100]">
       <div 
         class="w-4 h-4 rounded-full border-2 border-white/50 shadow-lg"
@@ -1089,7 +1179,7 @@
         title="Qibla Direction Accuracy{magneticDeclination !== 0 ? `\nMagnetic Declination: ${magneticDeclination > 0 ? '+' : ''}${magneticDeclination.toFixed(1)}°` : ''}"
       ></div>
     </div>
-  {/if}
+  {/if} -->
   
   {#if isLoading}
     <div class="absolute inset-0 flex flex-col justify-center items-center bg-gradient-to-br from-black/95 to-black/90 backdrop-blur-[10px] text-white z-[1000]">
