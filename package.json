@@ -1,7 +1,7 @@
 {
 	"name": "akh",
 	"private": true,
-	"version": "0.3.2-alpha",
+	"version": "0.3.3-alpha",
 	"type": "module",
 	"scripts": {
 		"dev": "turbo run dev:web dev:android dev:ios --parallel",
@@ -75,6 +75,7 @@
 		"@nativescript/core": "^8.9.1",
 		"@nativescript/geolocation": "^9.0.0",
 		"@nativescript/webpack": "^5.0.23",
+		"@tailwindcss/cli": "^4.1.10",
 		"adhan": "^4.4.3",
 		"autosize": "^6.0.1",
 		"dotenv": "^16.4.7",
@@ -82,7 +83,8 @@
 		"geomagnetism": "^0.2.0",
 		"jquery": "^3.7.1",
 		"marked": "^15.0.7",
-		"nativescript": "^8.9.1"
+		"nativescript": "^8.9.1",
+		"tailwind-scrollbar": "^4.0.2"
 	},
 	"packageManager": "npm@10.9.2"
 }

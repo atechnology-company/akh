@@ -1,4 +1,4 @@
-# akh 0.3-alpha
+# akh 0.3.3-alpha
 the utilitarian muslim companion
 
 written in svelte with help from [adhan](https://github.com/batoulapps/adhan-js)([MIT](https://raw.githubusercontent.com/batoulapps/Adhan/refs/heads/master/LICENSE)), [al adhan api](https://aladhan.com/) for hijri date, [nativescript for mobile](https://nativescript.org/) and [firebase](https://firebase.google/)
@@ -49,3 +49,11 @@ this software is released under the Mozilla Public License Version 2.0, but it h
 - carousel mode WOOOOOO
 - no more janky swiping :)) no problem
 - added version indicator in the bottom left of the about page
+
+### 0.3.2
+- qibla improvements
+
+### 0.3.3
+- attempting qibla fixes
+- quran qol improvements
+- added tafseer

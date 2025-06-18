@@ -2,6 +2,7 @@
 	import { onMount } from 'svelte';
 	import { currentLanguage } from '$lib/i18n';
 	import { browser } from '$app/environment';
+	import { marked } from 'marked';
 
 	// Component state
 	let isLoading = true;
@@ -23,6 +24,15 @@
 	// Navigation debounce
 	let lastNavigationTime = 0;
 
+	// Tafseer modal state
+	let showTafseerModal = false;
+	let selectedTafseerVerse: any = null;
+	let tafseerData: any = null;
+	let tafseerLoading = false;
+	let selectedTafseerAuthor = 'Ibn Kathir';
+	let longPressTimer: number | null = null;
+	let pressStarted = false;
+
 	// Available reciters from the API
 	const reciters = [
 		{ id: 1, name: 'Mishary Rashid Al Afasy' },
@@ -30,6 +40,13 @@
 		{ id: 3, name: 'Nasser Al Qatami' },
 		{ id: 4, name: 'Yasser Al Dosari' },
 		{ id: 5, name: 'Hani Ar Rifai' }
+	];
+
+	// Available tafseer authors
+	const tafseerAuthors = [
+		'Ibn Kathir',
+		'Maarif Ul Quran', 
+		'Tazkirul Quran'
 	];
 
 	// Available languages
@@ -42,7 +59,7 @@
 		{ key: 'uzbek', name: 'Uzbek' }
 	];
 
-	// Cookie functions
+	// Cookie functions for settings
 	function setCookie(name: string, value: string, days: number = 365) {
 		if (!browser) return;
 		const expires = new Date();
@@ -62,12 +79,45 @@
 		return null;
 	}
 
+	// LocalStorage functions for verse position
+	function saveCurrentPosition() {
+		if (!browser) return;
+		try {
+			const position = {
+				surah: currentSurah,
+				ayah: currentAyah,
+				timestamp: Date.now()
+			};
+			localStorage.setItem('quran_current_position', JSON.stringify(position));
+		} catch (error) {
+			console.error('Failed to save position to localStorage:', error);
+		}
+	}
+
+	function loadCurrentPosition() {
+		if (!browser) return null;
+		try {
+			const saved = localStorage.getItem('quran_current_position');
+			if (saved) {
+				const position = JSON.parse(saved);
+				// Only load if it's recent (within last 30 days)
+				if (Date.now() - position.timestamp < 30 * 24 * 60 * 60 * 1000) {
+					return position;
+				}
+			}
+		} catch (error) {
+			console.error('Failed to load position from localStorage:', error);
+		}
+		return null;
+	}
+
 	function saveProgress() {
 		setCookie('quran_current_surah', currentSurah.toString());
 		setCookie('quran_current_ayah', currentAyah.toString());
 		setCookie('quran_language', selectedLanguage);
 		setCookie('quran_reciter', currentReciter.toString());
 		setCookie('quran_view', currentView);
+		setCookie('quran_tafseer_author', selectedTafseerAuthor);
 	}
 
 	function loadProgress() {
@@ -76,12 +126,71 @@
 		const savedLanguage = getCookie('quran_language');
 		const savedReciter = getCookie('quran_reciter');
 		const savedView = getCookie('quran_view');
+		const savedTafseerAuthor = getCookie('quran_tafseer_author');
 
-		if (savedSurah) currentSurah = parseInt(savedSurah);
-		if (savedAyah) currentAyah = parseInt(savedAyah);
+		// Load from localStorage first (most recent position)
+		const savedPosition = loadCurrentPosition();
+		
+		if (savedPosition) {
+			currentSurah = savedPosition.surah;
+			currentAyah = savedPosition.ayah;
+		} else {
+			// Fallback to cookie values
+			if (savedSurah) currentSurah = parseInt(savedSurah);
+			if (savedAyah) currentAyah = parseInt(savedAyah);
+		}
+		
 		if (savedLanguage) selectedLanguage = savedLanguage;
 		if (savedReciter) currentReciter = parseInt(savedReciter);
 		if (savedView) currentView = savedView as 'list' | 'verse';
+		if (savedTafseerAuthor) selectedTafseerAuthor = savedTafseerAuthor;
+	}
+
+	// Long press handlers for tafseer modal
+	function handleVerseMouseDown(verse: any) {
+		pressStarted = true;
+		longPressTimer = setTimeout(() => {
+			if (pressStarted) {
+				openTafseerModal(verse);
+			}
+		}, 500) as unknown as number;
+	}
+
+	function handleVerseMouseUp() {
+		pressStarted = false;
+		if (longPressTimer) {
+			clearTimeout(longPressTimer);
+			longPressTimer = null;
+		}
+	}
+
+	function handleVerseTouchStart(verse: any) {
+		pressStarted = true;
+		longPressTimer = setTimeout(() => {
+			if (pressStarted) {
+				openTafseerModal(verse);
+			}
+		}, 500) as unknown as number;
+	}
+
+	function handleVerseTouchEnd() {
+		pressStarted = false;
+		if (longPressTimer) {
+			clearTimeout(longPressTimer);
+			longPressTimer = null;
+		}
+	}
+
+	async function openTafseerModal(verse: any) {
+		selectedTafseerVerse = verse;
+		showTafseerModal = true;
+		await fetchTafseer(verse.surahNo, verse.ayahNo);
+	}
+
+	function closeTafseerModal() {
+		showTafseerModal = false;
+		selectedTafseerVerse = null;
+		tafseerData = null;
 	}
 
 	// API functions
@@ -95,6 +204,21 @@
 			}));
 		} catch (error) {
 			console.error('Error fetching surahs:', error);
+		}
+	}
+
+	async function fetchTafseer(surahNo: number, ayahNo: number) {
+		try {
+			tafseerLoading = true;
+			const response = await fetch(`https://quranapi.pages.dev/api/tafsir/${surahNo}_${ayahNo}.json`);
+			if (!response.ok) throw new Error('Failed to fetch tafseer');
+			const data = await response.json();
+			tafseerData = data;
+		} catch (error) {
+			console.error('Error fetching tafseer:', error);
+			tafseerData = null;
+		} finally {
+			tafseerLoading = false;
 		}
 	}
 
@@ -248,6 +372,7 @@
 		}
 		
 		saveProgress();
+		saveCurrentPosition(); // Save to localStorage
 		
 		if (currentView === 'verse') {
 			if (wasChapterChange) {
@@ -302,6 +427,7 @@
 		}
 		
 		saveProgress();
+		saveCurrentPosition(); // Save to localStorage
 		
 		if (currentView === 'verse') {
 			if (wasChapterChange) {
@@ -395,6 +521,7 @@
 		}
 		
 		saveProgress();
+		saveCurrentPosition(); // Save to localStorage
 		if (currentView === 'verse') {
 			if (willChangeChapter) {
 				await preloadCurrentChapter();
@@ -427,6 +554,7 @@
 		}
 		
 		saveProgress();
+		saveCurrentPosition(); // Save to localStorage
 		if (currentView === 'verse') {
 			if (willChangeChapter) {
 				await preloadCurrentChapter();
@@ -579,6 +707,7 @@
 						}
 						
 						saveProgress();
+						saveCurrentPosition(); // Save current position to localStorage
 						lastCurrentAyahUpdate = now;
 					}
 				}
@@ -1287,7 +1416,7 @@
 				<!-- View Toggle Header (Desktop only) -->
 				{#if !isMobile}
 					<div class="header-container border-b border-white/20 flex items-center justify-between">
-						<div class="flex items-center">
+						<div class="flex items-center gap-4">
 							<div class="toggle-container relative bg-white/10 rounded-lg p-1">
 								<!-- Sliding background indicator -->
 								<div 
@@ -1317,6 +1446,20 @@
 										VERSE
 									</button>
 								</div>
+							</div>
+
+							<!-- Tafseer Author Selector -->
+							<div class="flex items-center gap-2">
+								<span class="text-xs font-chivo-mono text-white/50">TAFSEER</span>
+								<select
+									bind:value={selectedTafseerAuthor}
+									on:change={() => saveProgress()}
+									class="control-select bg-white/10 text-white border border-white/20 rounded-lg px-3 py-2 text-sm font-chivo-mono opacity-80 hover:opacity-100 transition-opacity"
+								>
+									{#each tafseerAuthors as author}
+										<option value={author} class="bg-british-racing-green text-white">{author}</option>
+									{/each}
+								</select>
 							</div>
 						</div>
 						
@@ -1454,7 +1597,20 @@
                     {:else if currentView === 'verse' && currentVerseData}
 						<div class="min-h-full min-w-full flex items-center justify-end p-4 md:p-8">
 							{#key `${currentSurah}-${currentAyah}`}
-							<div class="max-w-4xl w-full text-right verse-content">
+							<div class="max-w-4xl w-full text-right verse-content select-none"
+								 on:mousedown={() => handleVerseMouseDown(currentVerseData)}
+								 on:mouseup={handleVerseMouseUp}
+								 on:mouseleave={handleVerseMouseUp}
+								 on:touchstart={() => handleVerseTouchStart(currentVerseData)}
+								 on:touchend={handleVerseTouchEnd}
+								 on:touchcancel={handleVerseTouchEnd}
+								 role="button"
+								 tabindex="0"
+								 on:keydown={(e) => {
+									if (e.key === 'Enter' || e.key === ' ') {
+										openTafseerModal(currentVerseData);
+									}
+								 }}>
                                 <!-- Arabic Text -->
                                 <div class="mb-6 md:mb-8 arabic-text" dir="rtl">
                                     <p class="text-2xl md:text-4xl leading-relaxed font-amiri text-white">
@@ -1521,28 +1677,20 @@
                                 
                                 {#each allVerses as verse, index}
                                     <div 
-                                        class="verse-item transition-opacity duration-300 cursor-pointer hover:opacity-100"
+                                        class="verse-item transition-opacity duration-300 hover:opacity-100 select-none"
                                         data-ayah={verse.ayahNo}
                                         data-surah={verse.surahNo}
-                                        on:click={() => { 
-                                            currentSurah = verse.surahNo;
-                                            currentAyah = verse.ayahNo; 
-                                            saveProgress();
-                                            
-                                            // Switch to verse view when clicking on a verse
-                                            if (currentView === 'list') {
-                                                currentView = 'verse';
-                                                saveProgress();
-                                                preloadCurrentChapter();
-                                            }
-                                        }}
+                                        on:mousedown={() => handleVerseMouseDown(verse)}
+                                        on:mouseup={handleVerseMouseUp}
+                                        on:mouseleave={handleVerseMouseUp}
+                                        on:touchstart={() => handleVerseTouchStart(verse)}
+                                        on:touchend={handleVerseTouchEnd}
+                                        on:touchcancel={handleVerseTouchEnd}
 										role="button"
 										tabindex="0"
 										on:keydown={(e) => {
 											if (e.key === 'Enter' || e.key === ' ') {
-												currentSurah = verse.surahNo;
-												currentAyah = verse.ayahNo;
-												saveProgress();
+												openTafseerModal(verse);
 											}
 										}}
 										use:setupVerseObserver
@@ -1693,11 +1841,117 @@
 	{/if}
 </div>
 
+<!-- Tafseer Modal -->
+{#if showTafseerModal && selectedTafseerVerse}
+	<div 
+		class="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4"
+		on:click={closeTafseerModal}
+		on:keydown={(e) => e.key === 'Escape' && closeTafseerModal()}
+		role="button"
+		tabindex="0"
+		aria-label="Close tafseer modal"
+	>
+		<div 
+			class="bg-black/95 border border-white/20 rounded-lg max-w-4xl w-full max-h-[90vh] overflow-hidden modal-content"
+			on:click|stopPropagation
+			role="dialog"
+			aria-modal="true"
+		>
+			<!-- Modal Header -->
+			<div class="border-b border-white/20 p-6">
+				<div class="flex items-center justify-between mb-4">
+					<div class="flex items-center gap-4">
+						<h2 class="text-xl font-chivo-mono text-white">
+							TAFSEER • {selectedTafseerVerse.surahNo}:{selectedTafseerVerse.ayahNo}
+						</h2>
+						{#if tafseerData}
+							<span class="text-sm font-chivo-mono text-white/60">
+								{tafseerData.surahName}
+							</span>
+						{/if}
+					</div>
+					<button
+						on:click={closeTafseerModal}
+						class="text-white/60 hover:text-white transition-colors p-2"
+						aria-label="Close modal"
+					>
+						<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+						</svg>
+					</button>
+				</div>
+				
+				<!-- Verse Display -->
+				<div class="space-y-4">
+					<!-- Arabic Text -->
+					<div class="text-right" dir="rtl">
+						<p class="text-xl md:text-2xl leading-relaxed font-amiri text-white">
+							{selectedTafseerVerse.arabic1}
+						</p>
+					</div>
+					
+					<!-- Translation -->
+					<div class="text-right">
+						<p class="text-base md:text-lg leading-relaxed text-white/80 font-onest">
+							{selectedTafseerVerse[selectedLanguage] || selectedTafseerVerse.english}
+						</p>
+					</div>
+				</div>
+			</div>
+			
+			<!-- Modal Content -->
+			<div class="overflow-y-auto max-h-[60vh] p-6 scrollbar">
+				{#if tafseerLoading}
+					<div class="flex items-center justify-center py-8">
+						<div class="animate-spin rounded-full h-8 w-8 border-b-2 border-white/60"></div>
+						<span class="ml-3 text-white/60 font-chivo-mono text-sm">Loading tafseer...</span>
+					</div>
+				{:else if tafseerData}
+					{@const selectedTafseer = tafseerData.tafsirs?.find(t => t.author === selectedTafseerAuthor)}
+					{#if selectedTafseer}
+						<div class="space-y-2">
+							<div class="flex items-center justify-between border-b border-white/10 pb-2">
+								<h3 class="text-lg font-chivo-mono text-white">
+									{selectedTafseer.author}
+								</h3>
+								{#if selectedTafseer.groupVerse}
+									<span class="text-xs font-chivo-mono text-white/50">
+										{selectedTafseer.groupVerse}
+									</span>
+								{/if}
+							</div>
+							<div class="tafseer-content">
+								<div class="text-white/90 leading-relaxed font-onest whitespace-pre-wrap tafseer-content-inner">
+									{@html marked(selectedTafseer.content)}
+								</div>
+							</div>
+						</div>
+					{:else}
+						<div class="text-center py-8">
+							<p class="text-white/60 font-chivo-mono">No tafseer available for {selectedTafseerAuthor}</p>
+						</div>
+					{/if}
+				{:else}
+					<div class="text-center py-8">
+						<p class="text-white/60 font-chivo-mono">Failed to load tafseer</p>
+						<button 
+							on:click={() => fetchTafseer(selectedTafseerVerse.surahNo, selectedTafseerVerse.ayahNo)}
+							class="mt-4 px-4 py-2 bg-white/20 hover:bg-white/30 rounded-lg transition-all font-chivo-mono text-sm text-white"
+						>
+							Retry
+						</button>
+					</div>
+				{/if}
+			</div>
+		</div>
+	</div>
+{/if}
+
 <style>
-	@import url('https://fonts.googleapis.com/css2?family=Amiri:wght@400;700&family=Onest:wght@400;700&family=Chivo+Mono:wght@400;700&display=swap');
+	@import url('https://fonts.googleapis.com/css2?family=Amiri+Quran:wght@400;700&family=Onest:wght@400;700&family=Chivo+Mono:wght@400;700&display=swap');
 	
 	:global(.font-amiri) {
-		font-family: 'Amiri', serif;
+		font-family: 'Amiri Quran', serif;
 	}
 	
 	:global(.font-onest) {
@@ -2281,5 +2535,88 @@
 		.navigation-arrow {
 			display: none !important;
 		}
+	}
+
+	/* Tafseer Modal Styles */
+	.modal-content {
+		animation: modalSlideIn 0.3s ease-out;
+		transform-origin: center;
+	}
+
+	@keyframes modalSlideIn {
+		from {
+			opacity: 0;
+			transform: scale(0.95) translateY(20px);
+		}
+		to {
+			opacity: 1;
+			transform: scale(1) translateY(0);
+		}
+	}
+
+	/* Long press visual feedback */
+	.verse-item:active,
+	.verse-content:active {
+		transform: scale(0.98);
+		transition: transform 0.1s ease-out;
+	}
+
+	/* Selection prevention during long press */
+	.select-none {
+		-webkit-user-select: none;
+		-moz-user-select: none;
+		-ms-user-select: none;
+		user-select: none;
+		-webkit-touch-callout: none;
+	}
+
+	/* Tafseer content styling - global to affect dynamically inserted HTML */
+	:global(.tafseer-content-inner h1),
+	:global(.tafseer-content-inner h2),
+	:global(.tafseer-content-inner h3),
+	:global(.tafseer-content-inner h4),
+	:global(.tafseer-content-inner h5),
+	:global(.tafseer-content-inner h6) {
+		color: white !important;
+		margin: 0.5rem 0 0.25rem 0 !important;
+		font-weight: 600 !important;
+		font-size: 1.25rem !important;
+	}
+
+	:global(.tafseer-content-inner p) {
+		margin: 0.25rem 0 !important;
+		line-height: 1.6 !important;
+		font-weight: 400 !important;
+		font-size: 1rem !important;
+	}
+
+	:global(.tafseer-content-inner ul),
+	:global(.tafseer-content-inner ol) {
+		margin: 0.25rem 0 !important;
+		padding-left: 1.5rem;
+	}
+
+	:global(.tafseer-content-inner li) {
+		margin: 0.1rem 0 !important;
+	}
+
+	:global(.tafseer-content-inner blockquote) {
+		margin: 0.5rem 0 !important;
+		padding-left: 1rem;
+		border-left: 2px solid rgba(255, 255, 255, 0.3);
+		font-style: italic;
+	}
+
+	:global(.tafseer-content-inner strong),
+	:global(.tafseer-content-inner b) {
+		color: white !important;
+		font-weight: 600 !important;
+	}
+
+	.scrollbar {
+		overflow-y: auto;
+		overflow-x: hidden;
+		scrollbar-width: thin;
+		scrollbar-color: rgba(255, 255, 255, 0.2) transparent;
 	}
 </style>

@@ -3,7 +3,7 @@
   import { calculateQiblaDirection } from '../modules/qibla';
   import { t } from '$lib/i18n';
   import { accentColor, gradientColor } from '$lib/stores/accentColor';
-  import * as geomagnetism from 'geomagnetism';
+  import { browser } from '$app/environment';
   
   let leafletDeviceDirectionLine: any = null;
   
@@ -18,6 +18,7 @@
   let lastValidHeading: number = 0;
   let headingHistory: number[] = [];
   let magneticDeclination: number = 0;
+  let geomagnetismLoaded: boolean = false;
 
   let leafletMap: any = null;
   
@@ -31,6 +32,9 @@
   
   // Add variables for compass accuracy tracking
   let isMobileDevice: boolean = false;
+  
+  // Geomagnetism module - loaded dynamically in browser only
+  let geomagnetism: any = null;
   
   // Импортируем модуль NativeScript geolocation если он доступен
   let nativescriptGeolocation: any;
@@ -115,8 +119,33 @@
            (window.DeviceOrientationEvent !== undefined && typeof (window.DeviceOrientationEvent as any).requestPermission === 'function');
   }
   
+  // Load geomagnetism library dynamically (browser-only)
+  async function loadGeomagnetism() {
+    if (browser && !geomagnetism) {
+      try {
+        const geomagnetismModule = await import('geomagnetism');
+        geomagnetism = geomagnetismModule;
+        geomagnetismLoaded = true;
+        console.log('Geomagnetism library loaded successfully');
+      } catch (error) {
+        console.warn('Failed to load geomagnetism library, continuing without magnetic declination correction:', error);
+        geomagnetismLoaded = false;
+        geomagnetism = null;
+        // Will use fallback magnetic declination calculation
+      }
+    } else if (!browser) {
+      geomagnetismLoaded = false;
+    }
+  }
+
   // Calculate magnetic declination for the user's location
   function calculateMagneticDeclination(latitude: number, longitude: number): number {
+    if (!browser || !geomagnetismLoaded || !geomagnetism) {
+      console.warn('Geomagnetism library not available, using simplified fallback');
+      // Simplified fallback magnetic declination calculation
+      return getSimplifiedMagneticDeclination(latitude, longitude);
+    }
+    
     try {
       const date = new Date();
       const magData = geomagnetism.model(date).point([latitude, longitude]);
@@ -124,9 +153,39 @@
       console.log(`Magnetic declination for location (${latitude.toFixed(4)}, ${longitude.toFixed(4)}) on ${date.toDateString()}: ${declination.toFixed(2)}°`);
       return declination;
     } catch (error) {
-      console.warn('Failed to calculate magnetic declination:', error);
-      return 0;
+      console.warn('Failed to calculate magnetic declination, using fallback:', error);
+      return getSimplifiedMagneticDeclination(latitude, longitude);
     }
+  }
+
+  // Simplified magnetic declination calculation for fallback
+  function getSimplifiedMagneticDeclination(lat: number, lng: number): number {
+    // This is a very rough approximation based on location
+    // East is positive, West is negative
+    let declination = 0;
+    
+    if (lat > 0) { // Northern hemisphere
+      if (lng < -60) { // Americas
+        declination = -15 + (lng + 120) * 0.1;
+      } else if (lng < 60) { // Europe/Africa
+        declination = 5 - lng * 0.1;
+      } else { // Asia
+        declination = -10 + (lng - 60) * 0.05;
+      }
+    } else { // Southern hemisphere
+      if (lng < -60) { // South America
+        declination = 10 + (lng + 120) * 0.05;
+      } else if (lng < 60) { // Africa
+        declination = 15 - lng * 0.1;
+      } else { // Australia/Asia
+        declination = 5 + (lng - 60) * 0.05;
+      }
+    }
+    
+    // Clamp to reasonable range
+    const result = Math.max(-30, Math.min(30, declination));
+    console.log(`Simplified magnetic declination for location (${lat.toFixed(4)}, ${lng.toFixed(4)}): ${result.toFixed(2)}°`);
+    return result;
   }
 
   // Apply magnetic declination correction to compass heading
@@ -178,13 +237,42 @@
       return;
     }
     
-    // Detect mobile device
-    isMobileDevice = detectMobileDevice();
+    // Initialize component asynchronously
+    const initializeComponent = async () => {
+      try {
+        // Load geomagnetism library dynamically in browser only
+        if (browser) {
+          await loadGeomagnetism();
+        }
+        
+        // Detect mobile device
+        isMobileDevice = detectMobileDevice();
+        
+        // Start qibla finder automatically with OpenStreetMap
+        if (isStarted) {
+          startQiblaFinder();
+        }
+      } catch (error) {
+        console.error('Error during qibla component initialization:', error);
+        // Continue without geomagnetism if there's an error
+        geomagnetismLoaded = false;
+        isMobileDevice = detectMobileDevice();
+        if (isStarted) {
+          // Add timeout fallback in case everything fails
+          setTimeout(() => {
+            if (isLoading) {
+              console.warn('Initialization appears stuck, forcing loading to false');
+              isLoading = false;
+              errorMessage = 'Failed to initialize qibla finder. Please refresh the page.';
+            }
+          }, 30000); // 30 second ultimate fallback
+          startQiblaFinder();
+        }
+      }
+    };
     
-    // Start qibla finder automatically with OpenStreetMap
-    if (isStarted) {
-      startQiblaFinder();
-    }
+    // Start initialization
+    initializeComponent();
     
     // Cleanup function
     return () => {
@@ -203,10 +291,12 @@
   });
   
   function startQiblaFinder() {
+    console.log('startQiblaFinder called');
     isStarted = true;
     
     // Check if geolocation is available
     if (!navigator.geolocation) {
+      console.log('Geolocation not supported');
       errorMessage = 'Geolocation not supported by browser';
       isLoading = false;
       return;
@@ -298,14 +388,31 @@
 
     // Use OpenStreetMap - prettier and no API key needed
     console.log('Using OpenStreetMap for qibla direction');
+    
+    // Add a timeout to prevent getting stuck loading
+    const loadingTimeout = setTimeout(() => {
+      console.warn('Map loading timeout, continuing without map');
+      isLoading = false;
+      errorMessage = 'Map loading timed out. Location services may still work.';
+    }, 15000); // 15 second timeout
+    
+    console.log('About to call loadLeaflet()');
     loadLeaflet()
       .then(() => {
+        console.log('Leaflet loaded successfully, initializing map');
+        clearTimeout(loadingTimeout);
         initializeLeafletMap(mapElement);
+        console.log('About to call loadUserLocation()');
         loadUserLocation();
       })
       .catch((error: Error) => {
-        errorMessage = 'Failed to load map services. Please try again later.';
-        isLoading = false;
+        console.log('Leaflet loading failed:', error);
+        clearTimeout(loadingTimeout);
+        console.error('Failed to load Leaflet map:', error);
+        errorMessage = 'Failed to load map services. Trying location services only.';
+        // Try to continue with location services even without map
+        console.log('Trying loadUserLocation() without map');
+        loadUserLocation();
       });
   }
 
@@ -313,6 +420,15 @@
 
   
   function loadUserLocation() {
+    console.log('Starting location services...');
+    
+    // Add a timeout for location services
+    const locationTimeout = setTimeout(() => {
+      console.warn('Location service timeout, stopping loading');
+      isLoading = false;
+      errorMessage = 'Location service timed out. Please check your GPS and permissions.';
+    }, 20000); // 20 second timeout for location
+    
     // Если доступен NativeScript geolocation, используем его
     if (isUsingNativeDirection && nativescriptGeolocation) {
       nativescriptGeolocation.enableLocationRequest()
@@ -321,12 +437,13 @@
             desiredAccuracy: 3, // high accuracy
             updateDistance: 1,
             maximumAge: 5000,
-            timeout: 20000
+            timeout: 15000 // Reduced timeout
           };
           
           // Получаем текущее местоположение
           nativescriptGeolocation.getCurrentLocation(options)
             .then((location: any) => {
+              clearTimeout(locationTimeout);
               // Создаем совместимый с GeolocationPosition объект
               const geoPosition = {
                 coords: {
@@ -345,7 +462,10 @@
               
               handlePositionSuccess(geoPosition);
             })
-            .catch(handleLocationError);
+            .catch((error: any) => {
+              clearTimeout(locationTimeout);
+              handleLocationError(error);
+            });
           
           // Следим за изменениями местоположения
           nativescriptGeolocation.watchLocation(
@@ -395,15 +515,24 @@
             options
           );
         })
-        .catch(handleLocationError);
+        .catch((error: any) => {
+          clearTimeout(locationTimeout);
+          handleLocationError(error);
+        });
     } else {
       // Используем стандартный веб API геолокации как раньше
       navigator.geolocation.getCurrentPosition(
-        handlePositionSuccess,
-        handleLocationError,
+        (position) => {
+          clearTimeout(locationTimeout);
+          handlePositionSuccess(position);
+        },
+        (error) => {
+          clearTimeout(locationTimeout);
+          handleLocationError(error);
+        },
         {
           enableHighAccuracy: true,
-          timeout: 10000,
+          timeout: 15000, // Increased timeout to 15 seconds
           maximumAge: 0
         }
       );
@@ -948,7 +1077,7 @@
   }
 </style>
 
-<div class="relative w-full h-screen font-['Onest'] bg-gray-900 text-white overflow-hidden max-w-none">
+<div class="qibla-container relative w-full h-screen font-['Onest'] bg-gray-900 text-white overflow-hidden max-w-none">
   <div id="map" class="absolute inset-0 z-[1]"></div>
   
   <!-- Qibla accuracy indicator -->
