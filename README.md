@@ -36,12 +36,16 @@ this software is released under the Mozilla Public License Version 2.0, but it h
 - mobile app version
 - alif needs update to be in line with current plates engine and it needs to be faster
 - make mosques page better (auth, events update like a tg channel, once app is done set defaults etc)
+- mosque public limitations and auth
+- which rakat the imam is on based on audio recognition
+- surah recognition
 - need to think about verse by verse implementation, how to not reload but go up a verse through scrolling
 - full codebase migration to tailwindcss
 - fix compass in 0.3.2
 - make audio play more than one verse (autoscroll)
 - fix settings view on mobile as it is cut off
 - make a new welcome phase and tutorial
+- spotify wrapped but for salah response rate and masjid percentage prayed
 
 ### 0.3 update
 - qibla page fixed with design changes for minimalism and qol, moved from google maps api to openstreetmap
