@@ -1,7 +1,7 @@
 {
 	"name": "akh",
 	"private": true,
-	"version": "0.3.4t-alpha",
+	"version": "0.3.5t-alpha",
 	"type": "module",
 	"scripts": {
 		"dev": "turbo run dev:web dev:android dev:ios --parallel",

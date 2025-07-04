@@ -9,26 +9,26 @@
     import { prayerTimesStore, updateColorsBasedOnPrayerTimes } from '../modules/salah';
     import { accentColor, gradientColor } from '$lib/stores/accentColor';
     import { writable } from 'svelte/store';
-    
+
     let showHeading = false;
     let gradientActive = false;
     let showContent = false;
     let showButtons = false;
     let greetingText = '';
     let gradientColors: string[] = [];
-    
+
     // Function to extract colors from gradient string
     function extractGradientColors(gradientString: string): string[] {
         console.log('Extracting colors from gradient:', gradientString);
-        
+
         // First try to extract RGB/RGBA colors
         const rgbRegex = /rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)(?:\s*,\s*\d+(?:\.\d+)?)?\s*\)/g;
         const rgbMatches = Array.from(gradientString.matchAll(rgbRegex) || []);
-        
+
         // Then extract hex colors
         const hexRegex = /#[0-9A-Fa-f]{3,6}/g;
         const hexMatches = Array.from(gradientString.match(hexRegex) || []);
-        
+
         // Look for named CSS colors (common prayer time colors used in the app)
         const namedColors: { [key: string]: string[] } = {
             'linear-gradient(135deg, #1a2a6c, #b21f1f, #fdbb2d)': ['#1a2a6c', '#b21f1f', '#fdbb2d'], // fajr
@@ -40,13 +40,13 @@
             'linear-gradient(135deg, #0b122b, #3f0c41, #7a0270)': ['#0b122b', '#3f0c41', '#7a0270'], // tahajjud
             'linear-gradient(135deg, #2C3E50, #4B6CB7, #182848)': ['#2C3E50', '#4B6CB7', '#182848'], // witr
         };
-        
+
         // If we have an exact match in our known gradients, use those colors
         if (namedColors[gradientString]) {
             console.log('Found named colors match:', namedColors[gradientString]);
             return namedColors[gradientString];
         }
-        
+
         // Convert RGB matches to hex format
         const rgbHexMatches = rgbMatches.map(match => {
             const r = parseInt(match[1], 10);
@@ -54,33 +54,33 @@
             const b = parseInt(match[3], 10);
             return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`;
         });
-        
+
         // Combine all matches
         const allMatches = [...hexMatches, ...rgbHexMatches];
-        
+
         // Make sure we have at least 3 colors, duplicating if necessary
         const colors = allMatches.slice(0, 3);
         while (colors.length < 3 && colors.length > 0) {
             colors.push(colors[colors.length - 1]);
         }
-        
+
         console.log('Extracted colors:', colors);
-        
+
         // Fallback to default colors if we couldn't extract any
         if (colors.length === 0) {
             console.log('Using fallback colors');
             return ['#1a2a6c', '#b21f1f', '#fdbb2d']; // Default fajr colors
         }
-        
+
         return colors;
     }
-    
+
     // Subscribe to gradient color changes
     // Colors are now managed by salah.ts but we still need to extract them for gradient animation
     $: {
         // Only extract gradient colors for animation
         gradientColors = extractGradientColors($gradientColor);
-        
+
         // Update shape colors whenever gradientColors changes
         if (shapes.length > 0) {
             shapes = shapes.map(shape => {
@@ -91,13 +91,13 @@
             });
         }
     }
-    
+
     // Subscribe to language changes
     const unsubscribe = currentLanguage.subscribe(lang => {
         // Update greeting text when language changes
         greetingText = t('greeting');
     });
-    
+
     // Background animation
     type Shape = {
         id: number;
@@ -111,14 +111,14 @@
         dy: number;
         rotationSpeed: number;
     };
-    
+
     let shapes: Shape[] = [];
-    
+
     function createShape(id: number, type: 'star' | 'crescent') {
         // Ensure starting positions are GUARANTEED off-screen
         let x, y;
         const side = Math.floor(Math.random() * 4); // 0: top, 1: right, 2: bottom, 3: left
-        
+
         // Use much larger offsets to guarantee shapes start fully off-screen
         if (side === 0) {
             x = Math.random() * 100; // Horizontal position anywhere along width
@@ -127,13 +127,13 @@
             x = 220; // Far right of viewport
             y = Math.random() * 100;
         } else if (side === 2) {
-            x = Math.random() * 100; 
+            x = Math.random() * 100;
             y = 220; // Far below viewport
         } else {
             x = -120; // Far left of viewport
             y = Math.random() * 100;
         }
-        
+
         // Random direction vector that ensures crossing the screen
         let angle = 0;
         if (side === 0) {
@@ -149,11 +149,11 @@
             // Coming from left, angle between 300° and 60° (pointing right)
             angle = ((Math.random() * 120 + 300) % 360) * Math.PI / 180;
         }
-        
+
         const speed = Math.random() * 0.3 + 0.2; // Faster speed
         const dx = Math.cos(angle) * speed;
         const dy = Math.sin(angle) * speed;
-        
+
         shapes.push({
             id,
             x,
@@ -167,46 +167,46 @@
             rotationSpeed: (Math.random() - 0.5) * 1.5 // Faster rotation
         });
     }
-    
+
     function createShapes() {
         shapes = [];
         // Create 3 stars
         for (let i = 0; i < 3; i++) {
             createShape(i, 'star');
         }
-        
+
         // Create 3 crescents
         for (let i = 3; i < 6; i++) {
             createShape(i, 'crescent');
         }
     }
-    
+
     function updateShapes() {
         shapes = shapes.map(shape => {
             let { id, x, y, rotation, dx, dy, rotationSpeed, type } = shape;
-            
+
             // Update position
             x += dx;
             y += dy;
-            
+
             // Update rotation
             rotation = (rotation + rotationSpeed) % 360;
-            
+
             // Check if shape is out of bounds with larger boundaries for safety
             if (x < -150 || x > 250 || y < -150 || y > 250) {
                 // Create a new shape of the same type, but from a different edge
-                const currentSide = 
+                const currentSide =
                     y < -50 ? 0 : // top
                     x > 150 ? 1 : // right
                     y > 150 ? 2 : // bottom
                     3;           // left
-                
+
                 // Choose a different side for the new shape
                 let newSide;
                 do {
                     newSide = Math.floor(Math.random() * 4);
                 } while (newSide === currentSide);
-                
+
                 let newX, newY;
                 if (newSide === 0) {
                     newX = Math.random() * 100;
@@ -221,7 +221,7 @@
                     newX = -120;
                     newY = Math.random() * 100;
                 }
-                
+
                 // Calculate new angle for proper screen crossing
                 let newAngle = 0;
                 if (newSide === 0) {
@@ -233,11 +233,11 @@
                 } else {
                     newAngle = ((Math.random() * 120 + 300) % 360) * Math.PI / 180;
                 }
-                
+
                 const newSpeed = Math.random() * 0.3 + 0.2; // Faster speed
                 const newDx = Math.cos(newAngle) * newSpeed;
                 const newDy = Math.sin(newAngle) * newSpeed;
-                
+
                 return {
                     ...shape,
                     x: newX,
@@ -250,42 +250,42 @@
                     rotationSpeed: (Math.random() - 0.5) * 1.5 // Faster rotation
                 };
             }
-            
+
             return { ...shape, x, y, rotation };
         });
-        
+
         requestAnimationFrame(updateShapes);
     }
-    
+
     // Generate star points - fixed to create proper star
     function getStarPoints(size: number): string {
         const outerRadius = size;
         const innerRadius = size * 0.4;
         let path = '';
-        
+
         for (let i = 0; i < 5; i++) {
             // Outer point
             const outerAngle = (i * 2 * Math.PI / 5) - Math.PI / 2;
             const outerX = outerRadius * Math.cos(outerAngle);
             const outerY = outerRadius * Math.sin(outerAngle);
-            
+
             // Inner point
             const innerAngle = ((i + 0.5) * 2 * Math.PI / 5) - Math.PI / 2;
             const innerX = innerRadius * Math.cos(innerAngle);
             const innerY = innerRadius * Math.sin(innerAngle);
-            
+
             if (i === 0) {
                 path += `M ${outerX.toFixed(2)} ${outerY.toFixed(2)} `;
             } else {
                 path += `L ${outerX.toFixed(2)} ${outerY.toFixed(2)} `;
             }
-            
+
             path += `L ${innerX.toFixed(2)} ${innerY.toFixed(2)} `;
         }
-        
+
         return path + 'Z';
     }
-    
+
     // Generate crescent path - proper Islamic crescent moon shape
     function getCrescentPath(size: number): string {
         // Two-arc approach for proper crescent shape
@@ -293,7 +293,7 @@
         const innerRadius = size * 0.65;
         const startX = size * 0.2;
         const endX = startX;
-        
+
         return `
           M ${startX} ${-outerRadius * 0.5}
           A ${outerRadius} ${outerRadius} 0 1 0 ${startX} ${outerRadius * 0.5}
@@ -301,53 +301,53 @@
           Z
         `;
     }
-    
+
     onMount(() => {
         // Set greeting text for animation
         greetingText = t('greeting');
-        
+
         // Extract gradient colors on mount
         gradientColors = extractGradientColors($gradientColor);
-        
+
         // Force update colors if prayer times are available
         if (browser && $prayerTimesStore) {
             console.log('About component: Forcing color update based on prayer times');
             updateColorsBasedOnPrayerTimes($prayerTimesStore);
         }
-        
+
         // Subscribe to color changes
         const unsubscribeAccent = accentColor.subscribe(newColor => {
             console.log('Accent color changed to:', newColor);
         });
-        
+
         const unsubscribeGradient = gradientColor.subscribe(newGradient => {
             console.log('Gradient color changed to:', newGradient);
             gradientColors = extractGradientColors(newGradient);
-            
+
             // Also update shape colors
             shapes = shapes.map(shape => ({
                 ...shape,
                 color: shape.type === 'star' ? gradientColors[0] : gradientColors[1]
             }));
         });
-        
+
         // Create all shapes immediately
         createShapes();
-        
+
         // Start the animation immediately
         updateShapes();
-        
+
         // Animation sequence for content
         setTimeout(() => {
             showHeading = true; // Show white text
-            
+
             setTimeout(() => {
                 gradientActive = true; // Activate gradient animation
-                
+
                 // Show content with feathered linear wipe after gradient completes
                 setTimeout(() => {
                     showContent = true;
-                    
+
                     // Show buttons sooner
                     setTimeout(() => {
                         showButtons = true;
@@ -355,7 +355,7 @@
                 }, 500);
             }, 600);
         }, 300);
-        
+
         return () => {
             // Clean up subscriptions
             unsubscribe();
@@ -370,7 +370,7 @@
     <div class="background">
         <!-- Dot matrix overlay -->
         <div class="dot-matrix"></div>
-        
+
         <!-- SVG shapes -->
         <svg class="shapes" viewBox="-50 -50 100 100" preserveAspectRatio="xMidYMid slice">
             <defs>
@@ -393,14 +393,14 @@
             {#each shapes as shape (shape.id)}
                 <g style="transform: translate({shape.x}%, {shape.y}%) rotate({shape.rotation}deg);">
                     {#if shape.type === 'star'}
-                        <path 
-                            d={getStarPoints(shape.size)} 
+                        <path
+                            d={getStarPoints(shape.size)}
                             fill={`url(#shapeGradient-${shape.id})`}
                             class="shape"
                         />
                     {:else}
-                        <path 
-                            d={getCrescentPath(shape.size)} 
+                        <path
+                            d={getCrescentPath(shape.size)}
                             fill={`url(#shapeGradient-${shape.id})`}
                             fill-rule="evenodd"
                             class="shape"
@@ -410,7 +410,7 @@
             {/each}
         </svg>
     </div>
-    
+
     <!-- Content section -->
     <div class="container">
         <div class="about-container">
@@ -419,7 +419,7 @@
                     {greetingText}
                 </h1>
             {/if}
-            
+
             {#if showContent}
                 <div class="content-wrapper" transition:slide={{ duration: 800, easing: cubicOut, axis: 'y' }}>
                     <div class="content-fade" in:fade={{ duration: 600, delay: 200 }}>
@@ -438,7 +438,7 @@
         </div>
     </div>
     <!-- Version info -->
-    <div class="version-info">akh v0.3.4 test alpha - an <span style="color: #ff5705;">a</span>technology company project</div>
+    <div class="version-info">akh v0.3.5 test alpha - an <span style="color: #ff5705;">a</span>technology company project</div>
 </div>
 
 <style>
@@ -452,7 +452,7 @@
         display: flex;
         flex-direction: column;
     }
-    
+
     .background {
         position: fixed;
         top: 0;
@@ -463,7 +463,7 @@
         background: #121212;
         overflow: hidden;
     }
-    
+
     .dot-matrix {
         position: absolute;
         top: 0;
@@ -476,7 +476,7 @@
         pointer-events: none;
         opacity: 0.1;
     }
-    
+
     .shapes {
         position: absolute;
         top: 0;
@@ -491,14 +491,14 @@
         opacity: 0.3;
         animation: gradientMove 20s linear infinite;
     }
-    
+
     .shape {
         mix-blend-mode: screen;
         opacity: 1;
         filter: blur(0.5px);
         animation: shapeFloat 8s ease-in-out infinite;
     }
-    
+
     @keyframes gradientMove {
         0% {
             background-position: 0% 0%;
@@ -507,7 +507,7 @@
             background-position: 100% 100%;
         }
     }
-    
+
     @keyframes shapeFloat {
         0%, 100% {
             transform: translateY(0) scale(1);
@@ -516,7 +516,7 @@
             transform: translateY(-20px) scale(1.1);
         }
     }
-    
+
     /* Container styles */
     .container {
         display: flex;
@@ -530,7 +530,7 @@
         z-index: 10;
         background-color: transparent;
     }
-    
+
     .about-container {
         display: flex;
         justify-content: center;
@@ -543,7 +543,7 @@
         border-radius: 0.75rem;
         text-align: left;
     }
-    
+
     h1 {
         font-size: 2.5rem;
         margin-bottom: 1.5rem;
@@ -552,17 +552,17 @@
         align-self: flex-start;
         text-align: left;
     }
-    
+
     h1.visible {
         opacity: 1;
         transition: opacity 0.5s ease;
     }
-    
+
     .white-text {
         color: white;
         position: relative;
     }
-    
+
     .white-text::before {
         content: attr(data-greeting);
         position: absolute;
@@ -574,7 +574,7 @@
         -webkit-background-clip: text;
         color: transparent;
         background-size: 300% 100%;
-        background-image: linear-gradient(135deg, 
+        background-image: linear-gradient(135deg,
             #fff 0%,
             #fff 15%,
             var(--gradient-color-1, #1a2a6c) 30%,
@@ -590,13 +590,13 @@
         backface-visibility: hidden;
         -webkit-backface-visibility: hidden;
     }
-    
+
     .gradient-active::before {
         animation: gradientSlide 0.5s ease-in-out forwards;
         animation-iteration-count: 1;
         animation-fill-mode: forwards;
     }
-    
+
     @keyframes gradientSlide {
         0% {
             background-position: 0% center;
@@ -610,25 +610,25 @@
             opacity: 0;
         }
     }
-    
+
     .content-wrapper {
         position: relative;
     }
-    
+
     .content-fade {
         position: relative;
     }
-    
+
     p {
         margin-bottom: 1rem;
         line-height: 1.6;
     }
-    
+
     .personal-link, .business-link, .link-donations, .foundation-link {
         color: var(--gradient-color-2);
         text-decoration: none;
         position: relative;
-        background-image: linear-gradient(135deg, 
+        background-image: linear-gradient(135deg,
             var(--gradient-color-2) 0%,
             var(--gradient-color-2) 100%
         );
@@ -638,13 +638,13 @@
         background-position: 0% center;
         transition: color 0.2s ease-out;
     }
-    
+
     .personal-link:hover, .business-link:hover, .link-donations:hover, .foundation-link:hover {
         color: transparent;
         text-decoration: none;
-        background-image: linear-gradient(135deg, 
+        background-image: linear-gradient(135deg,
             var(--gradient-color-2) 0%,
-            var(--accent-color) 20%, 
+            var(--accent-color) 20%,
             var(--gradient-color-1) 40%,
             var(--gradient-color-2) 60%,
             var(--accent-color) 80%,
@@ -654,7 +654,7 @@
         animation-fill-mode: forwards;
     }
 
-    .personal-link:not(:hover), .business-link:not(:hover), 
+    .personal-link:not(:hover), .business-link:not(:hover),
     .link-donations:not(:hover), .foundation-link:not(:hover) {
         background-position: 0% center;
     }
@@ -673,7 +673,7 @@
             color: var(--gradient-color-2);
         }
     }
-    
+
     .buttons {
         display: flex;
         justify-content: space-between;
@@ -681,7 +681,7 @@
         width: 100%;
         padding: 0;
     }
-    
+
     .donate-button, .foundation-button {
         display: inline-block;
         padding: 0.8rem 1.5rem;
@@ -694,17 +694,17 @@
         background: linear-gradient(135deg, var(--gradient-color-1), var(--gradient-color-2));
         transition: all 0.3s ease;
     }
-    
+
     .donate-button:hover, .foundation-button:hover {
         transform: translateY(-2px);
         box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
         filter: brightness(1.1);
     }
-    
+
     .donate-button {
         margin-right: auto;  /* Push to left */
     }
-    
+
     .foundation-button {
         margin-left: auto;  /* Push to right */
     }
@@ -716,7 +716,7 @@
     a:hover {
         text-decoration: underline;
     }
-    
+
     .version-info {
         position: absolute;
         bottom: 1rem;
@@ -732,35 +732,35 @@
             font-size: 2rem;
             margin-bottom: 1rem;
         }
-        
+
         p {
             font-size: 0.9rem;
             line-height: 1.5;
             margin-bottom: 0.8rem;
         }
-        
+
         .about-container {
             padding: 0.8rem;
             max-width: 90%;
         }
-        
+
         .donate-button, .foundation-button {
             padding: 0.6rem 1.2rem;
             min-width: 8rem;
             font-size: 0.9rem;
         }
     }
-    
+
     /* Even smaller text for very small screens */
     @media (max-width: 480px) {
         h1 {
             font-size: 1.8rem;
         }
-        
+
         p {
             font-size: 0.85rem;
         }
-        
+
         .donate-button, .foundation-button {
             padding: 0.5rem 1rem;
             min-width: 7rem;

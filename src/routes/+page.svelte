@@ -17,19 +17,21 @@
     // Create separate arrays for desktop and mobile
     let allPages = [about, mosques, qibla, salah, quran, alif];
     let allPageNames = ['ABOUT', 'MOSQUES', 'QIBLA', 'SALAH', 'QURAN', 'ALIF'];
-    
+
     // Dynamically set pages based on device
     $: pages = isMobile ? allPages.filter(page => page !== mosques) : allPages;
     $: pageNames = isMobile ? allPageNames.filter(name => name !== 'MOSQUES') : allPageNames;
-    
-    let currentPageIndex = 3;
+
+    // Set default page to Salah dynamically based on device
+    $: defaultSalahIndex = isMobile ? pageNames.indexOf('SALAH') : allPageNames.indexOf('SALAH');
+    let currentPageIndex = 3; // Will be updated in onMount
     let previousPageIndex = 2;
     let slideDirection = 1; // 1 = right, -1 = left
     function navigateToMosquesPage() {
         goto('/mosques');
     }
     let currentPrayer: string = 'fajr';
-    
+
     // Store nav button elements and their positions
     let navButtons: HTMLButtonElement[] = [];
     let indicatorPosition = tweened({ left: 0, width: 0 }, {
@@ -40,43 +42,45 @@
     // First visit detection for swipe hints
     let isFirstVisit = false;
     let isMobile = false;
-    
+
     // For app switcher effect when swiping
     let isSwiping = false;
     let swipeProgress = 0;
     let swipeTarget = 0;
-    
+
     // Motion/shake detection for page carousel
     let isCarouselMode = false;
     let motionPermissionGranted = false;
+    let motionPermissionRequested = false;
+    let showMotionPermissionPrompt = false;
     let shakeDetectionActive = false;
     let lastAcceleration = { x: 0, y: 0, z: 0 };
-    let shakeThreshold = 8; // Lowered sensitivity for shake detection
+    let shakeThreshold = 20; // Much higher threshold to prevent accidental triggers
 
     // Subscribe to prayer times to get current prayer
     const unsubscribePrayerTimes = prayerTimesStore.subscribe(value => {
         if (!value) return;
-        
+
         // Get current prayer based on time
         const now = new Date();
         const currentTime = now.getHours() * 60 + now.getMinutes();
-        
+
         const timeToMinutes = (timeStr: string) => {
             if (!timeStr) return 0;
             const [hours, minutes] = timeStr.split(':').map(Number);
             return hours * 60 + minutes;
         };
-        
+
         // Define prayer order
         const prayers = ['fajr', 'sunrise', 'dhuhr', 'asr', 'maghrib', 'isha'];
-        
+
         // Find current prayer
         for (let i = 0; i < prayers.length; i++) {
             const prayer = prayers[i];
             const prayerTimeStr = value[prayer as keyof typeof value];
             if (!prayerTimeStr) continue;
             const prayerTime = timeToMinutes(prayerTimeStr);
-            
+
             if (currentTime < prayerTime) {
                 // If we're before this prayer, the previous one is current
                 currentPrayer = i === 0 ? prayers[prayers.length - 1] : prayers[i - 1];
@@ -112,11 +116,11 @@
             updateColorsBasedOnCurrentPrayer();
         }
     }
-    
+
     // Helper function to update colors based on current prayer
     function updateColorsBasedOnCurrentPrayer() {
         if (!currentPrayer) return;
-        
+
         // Update accent color based on current prayer
         const prayerColors = {
             fajr: '#fdbb2d', // Using last color from gradient
@@ -135,47 +139,47 @@
             maghrib: 'linear-gradient(135deg, #ef473a, #b42460)',
             isha: 'linear-gradient(135deg, #0f2027, #203a43, #2c5364)'
         } as const;
-        
+
         // Set the colors immediately in CSS variables
         if (browser) {
             const accentColorValue = prayerColors[currentPrayer as keyof typeof prayerColors] || prayerColors.dhuhr;
             const gradientValue = prayerGradients[currentPrayer as keyof typeof prayerGradients] || prayerGradients.dhuhr;
-            
+
             console.log(`Updating colors for prayer: ${currentPrayer}`);
             console.log(`Accent color: ${accentColorValue}`);
             console.log(`Gradient: ${gradientValue}`);
-            
+
             // Add RGB values for animations
             const hexToRgb = (hex: string) => {
                 // Remove the # if present
                 hex = hex.replace(/^#/, '');
-                
+
                 // Parse as RGB
                 const r = parseInt(hex.substring(0, 2), 16);
                 const g = parseInt(hex.substring(2, 4), 16);
                 const b = parseInt(hex.substring(4, 6), 16);
-                
+
                 return `${r}, ${g}, ${b}`;
             };
-            
+
             document.documentElement.style.setProperty('--accent-color', accentColorValue);
             document.documentElement.style.setProperty('--gradient-color', gradientValue);
             document.documentElement.style.setProperty('--accent-color-rgb', hexToRgb(accentColorValue));
-            
+
             // Extract gradient colors for gradient-color-1, gradient-color-2, etc.
             const extractGradientColors = (gradientString: string): string[] => {
                 const hexRegex = /#[0-9A-Fa-f]{6}/g;
                 const matches = gradientString.match(hexRegex) || [];
                 return matches.slice(0, 3);
             };
-            
+
             const gradientColors = extractGradientColors(gradientValue);
             if (gradientColors.length > 0) {
                 document.documentElement.style.setProperty('--gradient-color-1', gradientColors[0] || accentColorValue);
                 document.documentElement.style.setProperty('--gradient-color-2', gradientColors[1] || accentColorValue);
                 document.documentElement.style.setProperty('--gradient-color-3', gradientColors[2] || accentColorValue);
             }
-            
+
             // Update the stores as well
             accentColor.set(accentColorValue);
             gradientColor.set(gradientValue);
@@ -183,27 +187,38 @@
     }
 
     onMount(() => {
-        // Load saved page from localStorage on mount
+        checkMobile();
+
+        // Set default page to Salah after mobile detection
         const savedPage = localStorage.getItem('akhLastPage');
         if (savedPage !== null) {
             currentPageIndex = parseInt(savedPage);
             previousPageIndex = currentPageIndex;
+        } else {
+            // Default to Salah page - use index based on whether mobile or desktop
+            if (isMobile) {
+                // Mobile: ABOUT, QIBLA, SALAH, QURAN, ALIF (no MOSQUES)
+                currentPageIndex = 2; // SALAH is at index 2 on mobile
+            } else {
+                // Desktop: ABOUT, MOSQUES, QIBLA, SALAH, QURAN, ALIF
+                currentPageIndex = 3; // SALAH is at index 3 on desktop
+            }
+            previousPageIndex = currentPageIndex;
         }
+
         updateIndicatorPosition();
-        
+
         // Check if first visit
         isFirstVisit = localStorage.getItem('akhFirstVisit') !== 'false';
         if (isFirstVisit) {
             localStorage.setItem('akhFirstVisit', 'false');
         }
-        
-        checkMobile();
+
         window.addEventListener('resize', checkMobile);
 
-        // Setup motion detection for mobile devices - delay to ensure isMobile is set
+        // Setup motion detection for mobile devices
         setTimeout(() => {
             if (isMobile) {
-                console.log('Setting up motion detection on mobile device');
                 setupMotionDetection();
             }
         }, 100);
@@ -262,20 +277,20 @@
         touchStartY = e.touches[0].clientY;
         touchStartTime = Date.now();
     };
-    
+
     const handleTouchMove = (e: TouchEvent) => {
         if (isMobile && isCarouselMode) {
             const currentX = e.touches[0].clientX;
             const currentY = e.touches[0].clientY;
             const deltaX = currentX - touchStartX;
             const deltaY = currentY - touchStartY;
-            
+
             const isHorizontalSwipe = Math.abs(deltaX) > Math.abs(deltaY) && Math.abs(deltaX) > 20;
-            
+
             if (isHorizontalSwipe) {
                 isSwiping = true;
                 swipeProgress = Math.min(Math.max(deltaX / window.innerWidth, -0.5), 0.5);
-                
+
                 if (swipeProgress > 0.1) {
                     swipeTarget = (currentPageIndex - 1 + pages.length) % pages.length;
                 } else if (swipeProgress < -0.1) {
@@ -291,7 +306,7 @@
         touchEndX = e.changedTouches[0].clientX;
         const swipeDistance = touchEndX - touchStartX;
         const swipeTime = Date.now() - touchStartTime;
-        
+
         // Handle carousel mode touches
         if (isCarouselMode) {
             // Check if tap was on a page switcher item (let those handle their own clicks)
@@ -302,7 +317,7 @@
                 swipeProgress = 0;
                 return;
             }
-            
+
             // If this was a swipe, handle it
             if (Math.abs(swipeDistance) > 50) {
                 if (swipeDistance > 0) {
@@ -314,12 +329,12 @@
                 // If it was a tap (not a swipe), exit carousel mode and select current page
                 exitCarouselMode();
             }
-            
+
             isSwiping = false;
             swipeProgress = 0;
             return;
         }
-        
+
         // Reset swipe states for normal mode (no swiping in normal mode)
         if (isMobile) {
             isSwiping = false;
@@ -342,19 +357,19 @@
             const button = navButtons[currentPageIndex];
             const rect = button.getBoundingClientRect();
             const parentRect = button.parentElement!.getBoundingClientRect();
-            
+
             indicatorPosition.set({
                 left: rect.left - parentRect.left,
                 width: rect.width
             });
         }
     }
-    
+
     function checkMobile() {
         const wasMobile = isMobile;
         isMobile = window.innerWidth < 768;
         console.log('Mobile check:', { isMobile, width: window.innerWidth });
-        
+
         // If transitioning between mobile and desktop, adjust current page index
         if (wasMobile !== isMobile) {
             // If switching to mobile and current page is mosques, change to a different page
@@ -376,135 +391,147 @@
     // Request motion permission and setup shake detection
     async function setupMotionDetection() {
         if (!browser || !isMobile) return;
-        
-        console.log('Setting up motion detection...');
-        
+
         try {
             // Check if DeviceMotionEvent exists and requires permission (iOS 13+)
             if (typeof DeviceMotionEvent !== 'undefined' && 'requestPermission' in DeviceMotionEvent) {
-                console.log('Requesting motion permission for iOS...');
-                // For iOS, we need to request permission with user interaction
-                // Let's add the event listener first and request permission when user interacts
-                motionPermissionGranted = false;
-                
-                // Add a one-time touch listener to request permission
-                const requestPermissionOnTouch = async () => {
-                    try {
-                        const permission = await (DeviceMotionEvent as any).requestPermission();
-                        motionPermissionGranted = permission === 'granted';
-                        console.log('Motion permission result:', permission);
-                        
-                        if (motionPermissionGranted) {
-                            window.addEventListener('devicemotion', handleDeviceMotion);
-                            shakeDetectionActive = true;
-                            console.log('Motion detection activated');
-                        }
-                    } catch (e) {
-                        console.error('Error requesting motion permission:', e);
-                    }
-                    
-                    // Remove this one-time listener
-                    document.removeEventListener('touchstart', requestPermissionOnTouch);
-                };
-                
-                document.addEventListener('touchstart', requestPermissionOnTouch, { once: true });
+                // For iOS, show permission prompt to user
+                if (!motionPermissionRequested) {
+                    showMotionPermissionPrompt = true;
+                }
             } else {
                 // Android or older iOS - no permission needed
-                console.log('Adding motion listener for Android/older iOS...');
                 motionPermissionGranted = true;
                 window.addEventListener('devicemotion', handleDeviceMotion);
                 shakeDetectionActive = true;
-                console.log('Motion detection activated');
             }
         } catch (error) {
             console.error('Error setting up motion detection:', error);
         }
     }
-    
+
+    async function requestMotionPermission() {
+        if (typeof DeviceMotionEvent !== 'undefined' && 'requestPermission' in DeviceMotionEvent) {
+            try {
+                const permission = await (DeviceMotionEvent as any).requestPermission();
+                motionPermissionGranted = permission === 'granted';
+                motionPermissionRequested = true;
+                showMotionPermissionPrompt = false;
+
+                if (motionPermissionGranted) {
+                    window.addEventListener('devicemotion', handleDeviceMotion);
+                    shakeDetectionActive = true;
+                }
+            } catch (e) {
+                console.error('Error requesting motion permission:', e);
+                motionPermissionRequested = true;
+                showMotionPermissionPrompt = false;
+            }
+        }
+    }
+
+    function dismissMotionPermissionPrompt() {
+        showMotionPermissionPrompt = false;
+        motionPermissionRequested = true;
+    }
+
     // Handle device motion for shake detection
+    let lastShakeTime = 0;
+    const shakeDebounceTime = 2000; // 2 seconds between shakes
+
     function handleDeviceMotion(event: DeviceMotionEvent) {
-        if (!event.accelerationIncludingGravity || isCarouselMode) return;
-        
+        if (!event.accelerationIncludingGravity || !shakeDetectionActive || isCarouselMode) return;
+
+        const now = Date.now();
+        if (now - lastShakeTime < shakeDebounceTime) return;
+
         const acceleration = event.accelerationIncludingGravity;
         const x = acceleration.x || 0;
         const y = acceleration.y || 0;
         const z = acceleration.z || 0;
-        
+
+        // Initialize lastAcceleration if needed
+        if (lastAcceleration.x === 0 && lastAcceleration.y === 0 && lastAcceleration.z === 0) {
+            lastAcceleration = { x, y, z };
+            return;
+        }
+
         // Calculate the magnitude of acceleration change
         const deltaX = Math.abs(x - lastAcceleration.x);
         const deltaY = Math.abs(y - lastAcceleration.y);
         const deltaZ = Math.abs(z - lastAcceleration.z);
-        
         const totalDelta = deltaX + deltaY + deltaZ;
-        
-        // Log motion data for debugging (remove in production)
-        if (totalDelta > 5) {
-            console.log('Motion detected:', { totalDelta, x, y, z, deltaX, deltaY, deltaZ });
-        }
-        
-        // Detect shake gesture with lower threshold
+
+        // Detect shake gesture with strict requirements
         if (totalDelta > shakeThreshold) {
-            console.log('Shake detected!', totalDelta);
+            lastShakeTime = now;
             enterCarouselMode();
         }
-        
+
         lastAcceleration = { x, y, z };
     }
-    
-    // Enter carousel mode
+
+    // Enter carousel mode with zoom-out effect
     function enterCarouselMode() {
         if (isCarouselMode) return;
-        
-        isCarouselMode = true;
-        console.log('Entering carousel mode');
-        
-        // Haptic feedback if available
-        if ('vibrate' in navigator) {
-            navigator.vibrate(100);
-        }
-        
-        // Auto-exit after 10 seconds if no interaction
+
+        // Force a page transition to trigger zoom-out effect
+        const tempIndex = currentPageIndex;
+        currentPageIndex = -1;
         setTimeout(() => {
-            if (isCarouselMode) {
-                exitCarouselMode();
+            currentPageIndex = tempIndex;
+            isCarouselMode = true;
+
+            // Haptic feedback if available
+            if ('vibrate' in navigator) {
+                navigator.vibrate(100);
             }
-        }, 10000);
+
+            // Auto-exit after 8 seconds if no interaction
+            setTimeout(() => {
+                if (isCarouselMode) {
+                    exitCarouselMode();
+                }
+            }, 8000);
+        }, 10);
     }
-    
-    // Exit carousel mode
+
+    // Exit carousel mode with zoom-in effect
     function exitCarouselMode() {
-        isCarouselMode = false;
-        isSwiping = false;
-        swipeProgress = 0;
-        console.log('Exiting carousel mode');
+        // Force a page transition to trigger zoom-in effect
+        const tempIndex = currentPageIndex;
+        currentPageIndex = -1;
+        setTimeout(() => {
+            currentPageIndex = tempIndex;
+            isCarouselMode = false;
+            isSwiping = false;
+            swipeProgress = 0;
+        }, 10);
     }
-    
+
     // Handle carousel swipe navigation
     function handleCarouselSwipe(direction: 'left' | 'right') {
         if (!isCarouselMode) return;
-        
+
         if (direction === 'left') {
             nextPage();
         } else {
             prevPage();
         }
     }
-    
+
     // Handle carousel tap to select page
     function handleCarouselTap() {
         if (isCarouselMode) {
             exitCarouselMode();
         }
     }
-    
+
     // Handle direct page selection in carousel mode
     function handleCarouselPageSelect(index: number) {
         if (isCarouselMode) {
             setPage(index);
-            // Add a small delay before exiting to show the transition
-            setTimeout(() => {
-                exitCarouselMode();
-            }, 200);
+            exitCarouselMode();
         }
     }
 </script>
@@ -615,7 +642,7 @@
         font-weight: bold;
         opacity: 1;
     }
-    
+
     .nav-indicator {
         position: absolute;
         bottom: -2px;
@@ -637,7 +664,7 @@
         transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
         z-index: 2;
     }
-    
+
 
     .carousel.header-visible {
         margin-top: calc(1vh + 60px);
@@ -676,7 +703,7 @@
         overflow: hidden;
         transform: translateZ(0);
     }
-    
+
     /* Swipe indicator styles - similar to salah.svelte */
     .swipe-indicator {
         position: absolute;
@@ -688,17 +715,17 @@
         pointer-events: none;
         animation: pulse 2s infinite ease-in-out;
     }
-    
+
     .swipe-indicator.left {
         left: 20px;
         animation: bounceLeft 2s infinite ease-in-out;
     }
-    
+
     .swipe-indicator.right {
         right: 20px;
         animation: bounceRight 2s infinite ease-in-out;
     }
-    
+
     .swipe-indicator .arrow {
         width: 15px;
         height: 15px;
@@ -710,15 +737,15 @@
         top: 50%;
         filter: drop-shadow(0 0 3px rgba(255, 255, 255, 0.7));
     }
-    
+
     .swipe-indicator.left .arrow {
         transform: translate(-25%, -50%) rotate(135deg); /* Point left */
     }
-    
+
     .swipe-indicator.right .arrow {
         transform: translate(-75%, -50%) rotate(-45deg); /* Point right */
     }
-    
+
     /* Add a hint text next to the arrows */
     .swipe-indicator::after {
         content: attr(data-hint);
@@ -729,21 +756,21 @@
         white-space: nowrap;
         text-shadow: 0 0 5px rgba(0, 0, 0, 0.8);
     }
-    
+
     .swipe-indicator.left::after {
-        content: "Previous"; 
+        content: "Previous";
         left: 40px;
         top: 50%;
         transform: translateY(-50%);
     }
-    
+
     .swipe-indicator.right::after {
         content: "Next";
         right: 40px;
         top: 50%;
         transform: translateY(-50%);
     }
-    
+
     @keyframes bounceLeft {
         0%, 100% {
             transform: translateX(0);
@@ -754,7 +781,7 @@
             opacity: 1;
         }
     }
-    
+
     @keyframes bounceRight {
         0%, 100% {
             transform: translateX(0);
@@ -765,7 +792,7 @@
             opacity: 1;
         }
     }
-    
+
     @keyframes pulse {
         0%, 100% {
             opacity: 0.4;
@@ -776,7 +803,7 @@
             transform: scale(1.05);
         }
     }
-    
+
     .swiping-active .full {
         transition: transform 0.3s ease;
     }
@@ -792,15 +819,15 @@
         transition: opacity 0.3s ease;
         filter: drop-shadow(0 0 5px rgba(0, 0, 0, 0.5));
     }
-    
+
     .mobile-logo.swiping {
         opacity: 0.7;
     }
-    
+
     .mobile-logo.carousel {
         opacity: 0.9;
     }
-    
+
     /* Carousel mode styles - redesigned to match app switcher */
     .carousel-mode-logo {
         position: fixed;
@@ -813,11 +840,11 @@
         transition: opacity 0.3s ease;
         filter: drop-shadow(0 0 5px rgba(0, 0, 0, 0.5));
     }
-    
+
     .carousel-mode-logo.visible {
         opacity: 0.9;
     }
-    
+
     .carousel-mode-indicator {
         position: fixed;
         top: 20px;
@@ -833,11 +860,11 @@
         transition: opacity 0.3s ease;
         backdrop-filter: blur(10px);
     }
-    
+
     .carousel-mode-indicator.visible {
         opacity: 1;
     }
-    
+
     .page-switcher {
         position: fixed;
         left: 0;
@@ -853,11 +880,11 @@
         transition: opacity 0.3s ease;
         backdrop-filter: blur(10px);
     }
-    
+
     .page-switcher.visible {
         opacity: 1;
     }
-    
+
     .page-items {
         display: flex;
         gap: 25px;
@@ -865,7 +892,7 @@
         align-items: center;
         padding: 10px 0;
     }
-    
+
     .page-item {
         display: flex;
         flex-direction: column;
@@ -878,19 +905,19 @@
         background: rgba(255, 255, 255, 0.1);
         min-width: 60px;
     }
-    
+
     .page-item.active {
         opacity: 1;
         transform: scale(1.15);
         background: rgba(255, 255, 255, 0.2);
         box-shadow: 0 0 10px rgba(255, 255, 255, 0.3);
     }
-    
+
     .page-item:hover {
         opacity: 0.8;
         transform: scale(1.05);
     }
-    
+
     .page-icon {
         width: 40px;
         height: 6px;
@@ -899,12 +926,12 @@
         margin-bottom: 8px;
         transition: all 0.3s ease;
     }
-    
+
     .page-item.active .page-icon {
         background: var(--accent-color, white);
         box-shadow: 0 0 8px rgba(255, 255, 255, 0.5);
     }
-    
+
     .page-label {
         font-family: 'Chivo Mono', monospace;
         font-size: 0.7rem;
@@ -913,12 +940,94 @@
         font-weight: 500;
         text-shadow: 0 0 3px rgba(0, 0, 0, 0.8);
     }
-    
+
     .carousel-mode .full {
         transform: scale(0.8) translateZ(0);
         border-radius: 15px;
+        box-shadow: 0 0 20px rgba(0, 0, 0, 0.3);
         overflow: hidden;
-        box-shadow: 0 0 20px rgba(0, 0, 0, 0.5);
+    }
+
+    /* Motion permission prompt styles */
+    .motion-permission-prompt {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(0, 0, 0, 0.8);
+        backdrop-filter: blur(10px);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 1000;
+        padding: 20px;
+    }
+
+    .motion-permission-content {
+        background: rgba(255, 255, 255, 0.1);
+        border: 1px solid rgba(255, 255, 255, 0.2);
+        border-radius: 20px;
+        padding: 30px;
+        max-width: 400px;
+        text-align: center;
+        backdrop-filter: blur(20px);
+        box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+    }
+
+    .motion-permission-title {
+        font-family: 'Chivo Mono', monospace;
+        font-size: 1.2rem;
+        font-weight: bold;
+        color: white;
+        margin-bottom: 15px;
+    }
+
+    .motion-permission-description {
+        font-family: 'Chivo Mono', monospace;
+        font-size: 0.9rem;
+        color: rgba(255, 255, 255, 0.8);
+        line-height: 1.4;
+        margin-bottom: 25px;
+    }
+
+    .motion-permission-buttons {
+        display: flex;
+        gap: 15px;
+        justify-content: center;
+    }
+
+    .motion-permission-button {
+        font-family: 'Chivo Mono', monospace;
+        padding: 12px 20px;
+        border: none;
+        border-radius: 10px;
+        font-size: 0.9rem;
+        font-weight: 500;
+        cursor: pointer;
+        transition: all 0.3s ease;
+        min-width: 80px;
+    }
+
+    .motion-permission-button.primary {
+        background: var(--accent-color, #4285f4);
+        color: white;
+    }
+
+    .motion-permission-button.primary:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
+    }
+
+    .motion-permission-button.secondary {
+        background: rgba(255, 255, 255, 0.1);
+        color: rgba(255, 255, 255, 0.8);
+        border: 1px solid rgba(255, 255, 255, 0.2);
+    }
+
+    .motion-permission-button.secondary:hover {
+        background: rgba(255, 255, 255, 0.2);
+        color: white;
     }
 </style>
 
@@ -936,7 +1045,7 @@
     <div class="brand"><img src="/favicon.png" alt="akh logo" class="brand-logo" />akh</div>
     <div class="nav-section">
         {#each pageNames as name, i}
-            <button 
+            <button
                 class="nav-button {currentPageIndex === i ? 'active' : ''}"
                 on:click={() => setPage(i)}
                 bind:this={navButtons[i]}
@@ -950,25 +1059,25 @@
     </div>
 </div>
 
-<div class="carousel {isHeaderVisible ? 'header-visible' : ''} {isSwiping ? 'swiping-active' : ''} {isCarouselMode ? 'carousel-mode' : ''}" 
-    on:touchstart={handleTouchStart} 
+<div class="carousel {isHeaderVisible ? 'header-visible' : ''} {isSwiping ? 'swiping-active' : ''} {isCarouselMode ? 'carousel-mode' : ''}"
+    on:touchstart={handleTouchStart}
     on:touchmove={handleTouchMove}
     on:touchend={handleTouchEnd}>
-    
+
     {#if isMobile}
         <img src="/favicon.png" alt="akh logo" class="mobile-logo {isSwiping ? 'swiping' : ''} {isCarouselMode ? 'carousel' : ''}" />
     {/if}
-    
+
     <!-- Carousel mode indicator (top left, only in carousel mode) -->
     <div class="carousel-mode-indicator {isCarouselMode ? 'visible' : ''}">
         Carousel Mode
     </div>
-    
+
     <!-- Page switcher (bottom) - visible only in carousel mode -->
     <div class="page-switcher {isCarouselMode ? 'visible' : ''}">
         <div class="page-items">
             {#each pageNames as name, i}
-                <div class="page-item {i === currentPageIndex ? 'active' : ''}" 
+                <div class="page-item {i === currentPageIndex ? 'active' : ''}"
                      on:click={() => handleCarouselPageSelect(i)}
                      role="button"
                      tabindex="0">
@@ -978,19 +1087,19 @@
             {/each}
         </div>
     </div>
-    
+
     <div class="carousel-content">
         {#key currentPageIndex}
-            <div class="full" 
-                in:fly={{ 
-                    x: slideDirection * 500, 
-                    duration: 300, 
+            <div class="full"
+                in:fly={{
+                    x: slideDirection * 500,
+                    duration: 300,
                     opacity: 0,
                     easing: cubicOut
                 }}
-                out:fly={{ 
-                    x: -slideDirection * 500, 
-                    duration: 300, 
+                out:fly={{
+                    x: -slideDirection * 500,
+                    duration: 300,
                     opacity: 0,
                     easing: cubicOut
                 }}
@@ -999,13 +1108,32 @@
             </div>
         {/key}
     </div>
-    
+
     {#if isMobile && isFirstVisit && !isCarouselMode}
         <div class="swipe-indicator left" data-hint="Previous">
             <div class="arrow"></div>
         </div>
         <div class="swipe-indicator right" data-hint="Next">
-            <div class="arrow"></div>
-        </div>
-    {/if}
+            		<div class="arrow"></div>
+            	</div>
+            {/if}
+
+            {#if showMotionPermissionPrompt}
+            	<div class="motion-permission-prompt">
+            		<div class="motion-permission-content">
+            			<div class="motion-permission-title">Enable Shake Gesture</div>
+            			<div class="motion-permission-description">
+            				Allow motion access to enable shake-to-browse feature. Shake your device to enter carousel mode for easy page navigation.
+            			</div>
+            			<div class="motion-permission-buttons">
+            				<button class="motion-permission-button secondary" on:click={dismissMotionPermissionPrompt}>
+            					Not Now
+            				</button>
+            				<button class="motion-permission-button primary" on:click={requestMotionPermission}>
+            					Allow
+            				</button>
+            			</div>
+            		</div>
+            	</div>
+            {/if}
 </div>

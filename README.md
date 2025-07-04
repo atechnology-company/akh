@@ -1,10 +1,10 @@
 # akh 0.3.4-alpha
 the utilitarian muslim companion
 
-written in svelte with help from 
-- [adhan](https://github.com/batoulapps/adhan-js)([MIT](https://raw.githubusercontent.com/batoulapps/Adhan/refs/heads/master/LICENSE)) 
+written in svelte with help from
+- [adhan](https://github.com/batoulapps/adhan-js)([MIT](https://raw.githubusercontent.com/batoulapps/Adhan/refs/heads/master/LICENSE))
 - [al adhan api](https://aladhan.com/) for hijri date
-- [nativescript for mobile](https://nativescript.org/) 
+- [nativescript for mobile](https://nativescript.org/)
 - [firebase](https://firebase.google/)
 - [king fahad quran printing complex fonts from here](https://github.com/nuqayah/qpc-fonts)
 - [gemini 2.5 flash](https://ai.google.dev/gemini-api/docs/models)
@@ -22,7 +22,7 @@ with help from github copilot, [trae](https://trae.ai/) and [cursor](https://cur
 ## alif
 Artificial Learning Integration for Fataawa
 
-alif is an ai-powered search engine, using the [plates engine](https://github.com/atechnology-company/plates-mobile) 
+alif is an ai-powered search engine, using the [plates engine](https://github.com/atechnology-company/plates-mobile)
 
 using gemini 2.5 flash along with access to a wide base of pre-existing verified fataawa from a list of verifiable sources, you can input scenarios or complex queries for ai to dismantle, understand and provide relevant digestible rulings from verified sources
 
@@ -73,3 +73,7 @@ this software is released under the Mozilla Public License Version 2.0, but it h
 ### 0.3.4
 - changed from amiri font to king fahad quran printing complex fonts
 - updated readme
+
+### 0.3.5
+- fixing shake on ios
+- currently working on process of migrating to tauri
