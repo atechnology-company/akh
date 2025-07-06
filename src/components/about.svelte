@@ -438,7 +438,7 @@
         </div>
     </div>
     <!-- Version info -->
-    <div class="version-info">akh v0.3.5 test alpha - an <span style="color: #ff5705;">a</span>technology company project</div>
+    <div class="version-info">akh v0.3.6 test alpha - an <span style="color: #ff5705;">a</span>technology company project</div>
 </div>
 
 <style>

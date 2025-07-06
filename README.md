@@ -1,4 +1,4 @@
-# akh 0.3.4-alpha
+# akh 0.3.6-alpha
 the utilitarian muslim companion
 
 written in svelte with help from
@@ -77,3 +77,6 @@ this software is released under the Mozilla Public License Version 2.0, but it h
 ### 0.3.5
 - fixing shake on ios
 - currently working on process of migrating to tauri
+
+### 0.3.6
+- bug fixes and optimisations re carousel mode

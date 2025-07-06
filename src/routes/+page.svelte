@@ -42,6 +42,7 @@
     // First visit detection for swipe hints
     let isFirstVisit = false;
     let isMobile = false;
+    let isIOS = false;
 
     // For app switcher effect when swiping
     let isSwiping = false;
@@ -52,10 +53,9 @@
     let isCarouselMode = false;
     let motionPermissionGranted = false;
     let motionPermissionRequested = false;
-    let showMotionPermissionPrompt = false;
     let shakeDetectionActive = false;
     let lastAcceleration = { x: 0, y: 0, z: 0 };
-    let shakeThreshold = 20; // Much higher threshold to prevent accidental triggers
+    let shakeThreshold = 15; // Balanced threshold for reliable detection
 
     // Subscribe to prayer times to get current prayer
     const unsubscribePrayerTimes = prayerTimesStore.subscribe(value => {
@@ -368,7 +368,12 @@
     function checkMobile() {
         const wasMobile = isMobile;
         isMobile = window.innerWidth < 768;
-        console.log('Mobile check:', { isMobile, width: window.innerWidth });
+
+        // Detect iOS devices using user agent
+        const userAgent = navigator.userAgent || navigator.vendor || window.opera;
+        isIOS = /iPad|iPhone|iPod/.test(userAgent) && !window.MSStream;
+
+        console.log('Device check:', { isMobile, isIOS, width: window.innerWidth, userAgent });
 
         // If transitioning between mobile and desktop, adjust current page index
         if (wasMobile !== isMobile) {
@@ -392,18 +397,25 @@
     async function setupMotionDetection() {
         if (!browser || !isMobile) return;
 
+        console.log('Setting up motion detection...', { isIOS, isMobile, motionPermissionRequested });
+
+        // Don't setup again if already requested
+        if (motionPermissionRequested) return;
+
         try {
-            // Check if DeviceMotionEvent exists and requires permission (iOS 13+)
-            if (typeof DeviceMotionEvent !== 'undefined' && 'requestPermission' in DeviceMotionEvent) {
-                // For iOS, show permission prompt to user
-                if (!motionPermissionRequested) {
-                    showMotionPermissionPrompt = true;
-                }
+            // Check if iOS and if DeviceMotionEvent requires permission (iOS 13+)
+            if (isIOS && typeof DeviceMotionEvent !== 'undefined' && 'requestPermission' in DeviceMotionEvent) {
+                console.log('iOS device detected - requesting motion permission');
+                // For iOS, auto-request permission without modal
+                await requestMotionPermission();
             } else {
                 // Android or older iOS - no permission needed
+                console.log('Non-iOS device or older iOS - adding motion listener directly');
                 motionPermissionGranted = true;
+                motionPermissionRequested = true;
                 window.addEventListener('devicemotion', handleDeviceMotion);
                 shakeDetectionActive = true;
+                console.log('Motion detection activated');
             }
         } catch (error) {
             console.error('Error setting up motion detection:', error);
@@ -411,40 +423,39 @@
     }
 
     async function requestMotionPermission() {
-        if (typeof DeviceMotionEvent !== 'undefined' && 'requestPermission' in DeviceMotionEvent) {
+        if (isIOS && typeof DeviceMotionEvent !== 'undefined' && 'requestPermission' in DeviceMotionEvent) {
             try {
+                console.log('Requesting DeviceMotionEvent permission...');
                 const permission = await (DeviceMotionEvent as any).requestPermission();
                 motionPermissionGranted = permission === 'granted';
                 motionPermissionRequested = true;
-                showMotionPermissionPrompt = false;
+
+                console.log('Motion permission result:', permission);
 
                 if (motionPermissionGranted) {
                     window.addEventListener('devicemotion', handleDeviceMotion);
                     shakeDetectionActive = true;
+                    console.log('Motion detection activated on iOS');
+                } else {
+                    console.log('Motion permission denied');
                 }
             } catch (e) {
                 console.error('Error requesting motion permission:', e);
                 motionPermissionRequested = true;
-                showMotionPermissionPrompt = false;
             }
         }
     }
 
-    function dismissMotionPermissionPrompt() {
-        showMotionPermissionPrompt = false;
-        motionPermissionRequested = true;
-    }
-
     // Handle device motion for shake detection
     let lastShakeTime = 0;
-    const shakeDebounceTime = 2000; // 2 seconds between shakes
+    let shakeCount = 0;
+    const shakeDebounceTime = 3000; // 3 seconds between shake sessions
+    const shakeRequiredCount = 3; // Need 3 shakes within timeframe
 
     function handleDeviceMotion(event: DeviceMotionEvent) {
-        if (!event.accelerationIncludingGravity || !shakeDetectionActive || isCarouselMode) return;
+        if (!event.accelerationIncludingGravity || !shakeDetectionActive) return;
 
         const now = Date.now();
-        if (now - lastShakeTime < shakeDebounceTime) return;
-
         const acceleration = event.accelerationIncludingGravity;
         const x = acceleration.x || 0;
         const y = acceleration.y || 0;
@@ -462,51 +473,50 @@
         const deltaZ = Math.abs(z - lastAcceleration.z);
         const totalDelta = deltaX + deltaY + deltaZ;
 
-        // Detect shake gesture with strict requirements
-        if (totalDelta > shakeThreshold) {
+        // Reset shake count if too much time has passed
+        if (now - lastShakeTime > shakeDebounceTime) {
+            shakeCount = 0;
+        }
+
+        // Detect individual shake
+        if (totalDelta > shakeThreshold && now - lastShakeTime > 200) {
+            shakeCount++;
             lastShakeTime = now;
-            enterCarouselMode();
+
+            // Enter carousel mode only after multiple shakes
+            if (shakeCount >= shakeRequiredCount && !isCarouselMode) {
+                enterCarouselMode();
+                shakeCount = 0; // Reset counter
+            }
         }
 
         lastAcceleration = { x, y, z };
     }
 
-    // Enter carousel mode with zoom-out effect
+    // Enter carousel mode with smooth zoom-out
     function enterCarouselMode() {
         if (isCarouselMode) return;
 
-        // Force a page transition to trigger zoom-out effect
-        const tempIndex = currentPageIndex;
-        currentPageIndex = -1;
+        isCarouselMode = true;
+
+        // Haptic feedback if available
+        if ('vibrate' in navigator) {
+            navigator.vibrate(100);
+        }
+
+        // Auto-exit after 8 seconds if no interaction
         setTimeout(() => {
-            currentPageIndex = tempIndex;
-            isCarouselMode = true;
-
-            // Haptic feedback if available
-            if ('vibrate' in navigator) {
-                navigator.vibrate(100);
+            if (isCarouselMode) {
+                exitCarouselMode();
             }
-
-            // Auto-exit after 8 seconds if no interaction
-            setTimeout(() => {
-                if (isCarouselMode) {
-                    exitCarouselMode();
-                }
-            }, 8000);
-        }, 10);
+        }, 8000);
     }
 
-    // Exit carousel mode with zoom-in effect
+    // Exit carousel mode with smooth zoom-in
     function exitCarouselMode() {
-        // Force a page transition to trigger zoom-in effect
-        const tempIndex = currentPageIndex;
-        currentPageIndex = -1;
-        setTimeout(() => {
-            currentPageIndex = tempIndex;
-            isCarouselMode = false;
-            isSwiping = false;
-            swipeProgress = 0;
-        }, 10);
+        isCarouselMode = false;
+        isSwiping = false;
+        swipeProgress = 0;
     }
 
     // Handle carousel swipe navigation
@@ -946,88 +956,7 @@
         border-radius: 15px;
         box-shadow: 0 0 20px rgba(0, 0, 0, 0.3);
         overflow: hidden;
-    }
-
-    /* Motion permission prompt styles */
-    .motion-permission-prompt {
-        position: fixed;
-        top: 0;
-        left: 0;
-        right: 0;
-        bottom: 0;
-        background: rgba(0, 0, 0, 0.8);
-        backdrop-filter: blur(10px);
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        z-index: 1000;
-        padding: 20px;
-    }
-
-    .motion-permission-content {
-        background: rgba(255, 255, 255, 0.1);
-        border: 1px solid rgba(255, 255, 255, 0.2);
-        border-radius: 20px;
-        padding: 30px;
-        max-width: 400px;
-        text-align: center;
-        backdrop-filter: blur(20px);
-        box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
-    }
-
-    .motion-permission-title {
-        font-family: 'Chivo Mono', monospace;
-        font-size: 1.2rem;
-        font-weight: bold;
-        color: white;
-        margin-bottom: 15px;
-    }
-
-    .motion-permission-description {
-        font-family: 'Chivo Mono', monospace;
-        font-size: 0.9rem;
-        color: rgba(255, 255, 255, 0.8);
-        line-height: 1.4;
-        margin-bottom: 25px;
-    }
-
-    .motion-permission-buttons {
-        display: flex;
-        gap: 15px;
-        justify-content: center;
-    }
-
-    .motion-permission-button {
-        font-family: 'Chivo Mono', monospace;
-        padding: 12px 20px;
-        border: none;
-        border-radius: 10px;
-        font-size: 0.9rem;
-        font-weight: 500;
-        cursor: pointer;
-        transition: all 0.3s ease;
-        min-width: 80px;
-    }
-
-    .motion-permission-button.primary {
-        background: var(--accent-color, #4285f4);
-        color: white;
-    }
-
-    .motion-permission-button.primary:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
-    }
-
-    .motion-permission-button.secondary {
-        background: rgba(255, 255, 255, 0.1);
-        color: rgba(255, 255, 255, 0.8);
-        border: 1px solid rgba(255, 255, 255, 0.2);
-    }
-
-    .motion-permission-button.secondary:hover {
-        background: rgba(255, 255, 255, 0.2);
-        color: white;
+        transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
     }
 </style>
 
@@ -1089,24 +1018,10 @@
     </div>
 
     <div class="carousel-content">
-        {#key currentPageIndex}
-            <div class="full"
-                in:fly={{
-                    x: slideDirection * 500,
-                    duration: 300,
-                    opacity: 0,
-                    easing: cubicOut
-                }}
-                out:fly={{
-                    x: -slideDirection * 500,
-                    duration: 300,
-                    opacity: 0,
-                    easing: cubicOut
-                }}
-                style="will-change: transform, opacity; transform: scale({isSwiping || isCarouselMode ? 0.8 : 1}) translateZ(0) translateX({isSwiping ? swipeProgress * 100 : 0}px);">
-                <svelte:component this={pages[currentPageIndex]} />
-            </div>
-        {/key}
+        <div class="full"
+            style="transform: translateX({swipeProgress * 100}vw);">
+            <svelte:component this={pages[currentPageIndex]} />
+        </div>
     </div>
 
     {#if isMobile && isFirstVisit && !isCarouselMode}
@@ -1118,22 +1033,5 @@
             	</div>
             {/if}
 
-            {#if showMotionPermissionPrompt}
-            	<div class="motion-permission-prompt">
-            		<div class="motion-permission-content">
-            			<div class="motion-permission-title">Enable Shake Gesture</div>
-            			<div class="motion-permission-description">
-            				Allow motion access to enable shake-to-browse feature. Shake your device to enter carousel mode for easy page navigation.
-            			</div>
-            			<div class="motion-permission-buttons">
-            				<button class="motion-permission-button secondary" on:click={dismissMotionPermissionPrompt}>
-            					Not Now
-            				</button>
-            				<button class="motion-permission-button primary" on:click={requestMotionPermission}>
-            					Allow
-            				</button>
-            			</div>
-            		</div>
-            	</div>
-            {/if}
+
 </div>
