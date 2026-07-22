@@ -26,7 +26,7 @@ alif is an ai-powered search engine, using the [plates engine](https://github.co
 
 using gemini 2.5 flash along with access to a wide base of pre-existing verified fataawa from a list of verifiable sources, you can input scenarios or complex queries for ai to dismantle, understand and provide relevant digestible rulings from verified sources
 
-this software is released under the Mozilla Public License Version 2.0, but it honestly isn't really that deep just yet so just do whatever you want, it isn't like i'm bothered enough to sue anyone or take legal action.
+Licensed under the ISC License. See [LICENSE](LICENSE) for details.
 
 ### todo
 - allow users to use multiple providers (gpt, gemini, claude etc)
